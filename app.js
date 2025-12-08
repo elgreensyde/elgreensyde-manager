@@ -2,102 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// --- GLOBAL VARIABLES ---
-window.appData = { inventory: [], finance: [], transactions: [] };
-window.isOffline = false;
-let orderQueue = [];
-let currentCart = [];
-let currentReceiptId = null;
-
-// --- 1. DEFINE UI FUNCTIONS FIRST (Fixes the "Stuck Button" issue) ---
-
-// Navigation Logic
-window.nav = function(id) {
-    document.querySelectorAll('.view-section').forEach(e => e.classList.add('hidden'));
-    const view = document.getElementById('view-' + id);
-    if(view) view.classList.remove('hidden');
-    
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active', 'text-white'));
-    const btn = document.getElementById('nav-' + id);
-    if(btn) btn.classList.add('active', 'text-white');
-    
-    if(id === 'sales') initPOS();
-};
-
-window.finNav = function(id) {
-    document.querySelectorAll('.fin-view').forEach(e => e.classList.add('hidden'));
-    document.getElementById(id).classList.remove('hidden');
-    
-    document.querySelectorAll('.fin-nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('btn-' + id).classList.add('active');
-};
-
-// Modal Logic
-window.openModal = function(id, add) { 
-    document.getElementById(id).classList.remove('hidden');
-    if(add && id === 'modal-add-item') {
-        document.getElementById('edit-id').value = '';
-        document.getElementById('new-name').value = '';
-        document.getElementById('new-price').value = '';
-        document.getElementById('new-stock').value = '';
-    }
-};
-window.closeModal = function(id) { document.getElementById(id).classList.add('hidden'); };
-window.openCloudModal = function() { document.getElementById('cloud-modal').classList.remove('hidden'); };
-
-// Offline Mode Override
-window.enableOfflineMode = function() {
-    window.isOffline = true;
-    document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('main-app').classList.remove('hidden');
-    window.refreshUI();
-};
-
-// --- 2. CORE LOGIC ---
-
-function getData() { return window.appData; }
-
-// Save Function
-window.saveData = function(d) {
-    window.appData = d;
-    localStorage.setItem('eg_offline_data', JSON.stringify(d));
-    if(window.currentUser && window.saveToCloud) window.saveToCloud();
-    window.refreshUI();
-    showToast();
-};
-
-window.refreshUI = function() {
-    const d = getData();
-    // Dashboard Stats
-    const rev = (d.transactions||[]).reduce((a,b)=>a+b.total,0);
-    const exp = (d.finance||[]).reduce((a,b)=>a+b.amount,0);
-    
-    const dashRev = document.getElementById('dash-rev');
-    if(dashRev) dashRev.innerText = rev.toLocaleString();
-    
-    const dashExp = document.getElementById('dash-exp');
-    if(dashExp) dashExp.innerText = exp.toLocaleString();
-    
-    const dashNet = document.getElementById('dash-net');
-    if(dashNet) dashNet.innerText = (rev - exp).toLocaleString();
-    
-    renderInventory();
-    renderFinance();
-    renderSalesLog();
-    renderBestSellers();
-    initPOS();
-};
-
-function showToast(m="Saved") { 
-    const t = document.getElementById('toast');
-    if(t) {
-        t.innerText = m;
-        t.style.display = 'block';
-        setTimeout(() => t.style.display = 'none', 2000);
-    }
-}
-
-// --- 3. FIREBASE SETUP ---
+// --- FIREBASE CONFIG (Hardcoded for your ease) ---
 const config = {
     apiKey: "AIzaSyChkSQg-wBbNSOsm3iDn4UxPMACe8lfMj0",
     authDomain: "elgreensyde-ef4f0.firebaseapp.com",
@@ -111,58 +16,154 @@ const config = {
 const app = initializeApp(config);
 const db = getFirestore(app);
 const auth = getAuth(app);
-window.currentUser = null;
+let currentUser = null;
 
-// Auth Functions
+// --- GLOBAL VARIABLES ---
+window.appData = { inventory: [], finance: [], transactions: [] };
+window.isOffline = false;
+let orderQueue = [];
+let currentCart = [];
+let currentReceiptId = null;
+
+// --- AUTH LOGIC ---
 window.cloudLogin = async () => {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); } 
-    catch(e) { alert("Login failed: " + e.message); }
+    catch(e) { alert("Login failed: " + e.message); console.error(e); }
 };
 
 window.cloudLogout = () => signOut(auth).then(() => location.reload());
 
-window.saveToCloud = async () => {
-    if (window.currentUser) {
-        await setDoc(doc(db, "users", window.currentUser.uid), window.appData);
-    }
-};
-
-// Auth Listener
 onAuthStateChanged(auth, (user) => {
     const dot = document.getElementById('cloud-indicator');
     if(user) {
-        window.currentUser = user;
+        currentUser = user;
         if(dot) { dot.classList.remove('bg-gray-400'); dot.classList.add('bg-green-500'); }
         document.getElementById('auth-overlay').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
-        
-        // Modal State
         document.getElementById('cloud-login-view').classList.add('hidden');
         document.getElementById('cloud-user-view').classList.remove('hidden');
         document.getElementById('user-email').innerText = user.email;
 
-        // Hot Sync (No Reload)
+        // HOT SYNC (Instant Update)
         onSnapshot(doc(db, "users", user.uid), (snap) => {
             if(snap.exists()) {
                 window.appData = snap.data();
-                window.refreshUI();
+                window.refreshUI(); 
             }
         });
     } else {
-        if(dot) { dot.classList.remove('bg-green-500'); dot.classList.add('bg-gray-400'); }
-        if(!window.isOffline) {
-            document.getElementById('auth-overlay').classList.remove('hidden');
-            document.getElementById('main-app').classList.add('hidden');
-        }
-        document.getElementById('cloud-login-view').classList.remove('hidden');
-        document.getElementById('cloud-user-view').classList.add('hidden');
+       if(dot) { dot.classList.remove('bg-green-500'); dot.classList.add('bg-gray-400'); }
+       if(!window.isOffline) {
+           document.getElementById('auth-overlay').classList.remove('hidden');
+           document.getElementById('main-app').classList.add('hidden');
+       }
+       document.getElementById('cloud-login-view').classList.remove('hidden');
+       document.getElementById('cloud-user-view').classList.add('hidden');
     }
 });
 
+// Save (Local + Cloud)
+window.saveData = (d) => {
+    window.appData = d;
+    localStorage.setItem('eg_offline_data', JSON.stringify(d));
+    if(currentUser) {
+        setDoc(doc(db, "users", currentUser.uid), window.appData).catch(console.error);
+    }
+    window.refreshUI();
+    showToast();
+};
 
-// --- 4. FEATURE LOGIC ---
+function getData() { return window.appData; }
+function showToast(m="Saved") { 
+    const t=document.getElementById('toast'); 
+    t.innerText=m; 
+    t.style.display='block'; 
+    setTimeout(()=>t.style.display='none',2000); 
+}
 
-// Inventory
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', () => {
+    const local = localStorage.getItem('eg_offline_data');
+    if(local) window.appData = JSON.parse(local);
+    document.getElementById('current-date').innerText = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    fetchWeather();
+    
+    // Daily Verse
+    const verses = ["Genesis 2:15 - Keep the garden.", "Isaiah 58:11 - Like a watered garden.", "Psalm 1:3 - Like a tree planted by water."];
+    document.getElementById('daily-verse').innerText = "\"" + verses[Math.floor(Math.random() * verses.length)] + "\"";
+});
+
+window.enableOfflineMode = function() {
+    window.isOffline = true;
+    document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('main-app').classList.remove('hidden');
+    window.refreshUI();
+};
+
+// --- CORE UI REFRESH ---
+window.refreshUI = function() {
+    const d = getData();
+    const rev = (d.transactions||[]).reduce((a,b)=>a+b.total,0);
+    const exp = (d.finance||[]).reduce((a,b)=>a+b.amount,0);
+    
+    document.getElementById('dash-rev').innerText = rev.toLocaleString();
+    document.getElementById('dash-exp').innerText = exp.toLocaleString();
+    document.getElementById('dash-net').innerText = (rev-exp).toLocaleString();
+    
+    renderInventory();
+    renderFinance();
+    renderSalesLog();
+    renderBestSellers();
+    initPOS();
+};
+
+// --- UI HELPERS ---
+window.nav = function(id) {
+    document.querySelectorAll('.view-section').forEach(e => e.classList.add('hidden'));
+    document.getElementById('view-'+id).classList.remove('hidden');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('nav-'+id).classList.add('active');
+    if(id==='sales') initPOS();
+};
+
+window.finNav = function(id) {
+    document.querySelectorAll('.fin-view').forEach(e => e.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    document.querySelectorAll('.fin-nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-'+id).classList.add('active');
+};
+
+window.openModal = function(id, add) { 
+    document.getElementById(id).classList.remove('hidden');
+    if(add && id === 'modal-add-item') {
+        document.getElementById('edit-id').value = '';
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-price').value = '';
+        document.getElementById('new-stock').value = '';
+        document.getElementById('new-cost').value = '';
+    }
+};
+window.closeModal = function(id) { document.getElementById(id).classList.add('hidden'); };
+window.openCloudModal = function() { document.getElementById('cloud-modal').classList.remove('hidden'); };
+
+
+// --- FEATURES ---
+
+// 1. Weather (Fixed API)
+function fetchWeather() {
+    // Current=temperature_2m is the modern API call for Open-Meteo
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=7.9066&longitude=125.0945&current=temperature_2m,weather_code&daily=precipitation_probability_max&timezone=auto')
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.current){
+            document.getElementById('w-temp').innerText = Math.round(d.current.temperature_2m) + "°C";
+            document.getElementById('w-desc').innerText = "Live Update";
+            if(d.daily) document.getElementById('w-rain').innerText = d.daily.precipitation_probability_max[0] + "%";
+        }
+    }).catch(()=>{ document.getElementById('w-desc').innerText = "Offline"; });
+}
+
+// 2. Inventory
 function renderInventory() {
     const d = getData();
     const f = document.getElementById('inv-filter').value;
@@ -221,14 +222,10 @@ window.editItem = function(id) {
 };
 
 window.deleteItem = function(id) {
-    if(confirm('Delete?')){ 
-        const d=getData(); 
-        d.inventory=d.inventory.filter(x=>x.id!=id); 
-        window.saveData(d); 
-    }
+    if(confirm('Delete?')){ const d=getData(); d.inventory=d.inventory.filter(x=>x.id!=id); window.saveData(d); }
 };
 
-// Finance
+// 3. Finance
 window.addExpense = function() {
     const desc = document.getElementById('fin-desc').value;
     const amt = parseFloat(document.getElementById('fin-amt').value);
@@ -268,6 +265,7 @@ window.deleteAllFinance = function() {
     }
 };
 
+// 4. Sales Log & Receipt
 function renderSalesLog() {
     document.getElementById('sales-table').innerHTML = (getData().transactions||[]).slice().reverse().map(t=>`
         <tr class="border-b dark:border-secondary-700">
@@ -293,9 +291,16 @@ window.deleteTransaction = function(id) {
 window.viewReceipt = function(id) {
     const t = getData().transactions.find(x => x.id === id); if(!t) return;
     currentReceiptId = id;
-    let html = `<p class="border-b pb-2 mb-2 font-bold font-mono">Cust: ${t.customer}</p>`;
-    t.items.forEach(i => { html += `<div class="flex justify-between text-xs mb-1 font-mono"><span>${i.qty} x ${i.name}</span><span>${i.price}</span></div>`; });
-    html += `<div class="border-t pt-2 mt-2 flex justify-between font-bold font-mono"><span>Total</span><span>₱${t.total}</span></div>`;
+    let html = `
+    <div style="font-family:'Courier Prime'; color:black;">
+        <p class="border-b border-dashed border-black pb-2 mb-2 font-bold">ID: #${t.id}</p>
+        <p class="text-xs mb-2">Date: ${t.date} <span class="float-right">${t.customer}</span></p>
+    `;
+    t.items.forEach(i => { 
+        html += `<div class="flex justify-between text-xs mb-1"><span>${i.qty} x ${i.name}</span><span>${i.price}</span></div>`; 
+    });
+    html += `<div class="border-top border-dashed border-black pt-2 mt-2 flex justify-between font-bold text-lg"><span>Total</span><span>₱${t.total}</span></div></div>`;
+    
     document.getElementById('receipt-content').innerHTML = html;
     window.openModal('modal-receipt');
 };
@@ -308,8 +313,8 @@ window.printCurrentReceipt = function() {
     
     const printArea = document.getElementById('batch-print-area');
     printArea.innerHTML = `
-        <div style="font-family:'Courier Prime'; text-align:center; padding:10px;">
-            <h2 style="margin:0;">ELGREENSYDE</h2>
+        <div style="font-family:'Courier Prime'; text-align:center; padding:10px; width:80mm; margin:0 auto;">
+            <h2 style="margin:0; font-size:16px; font-weight:bold;">ELGREENSYDE</h2>
             <p style="font-size:10px; margin:0;">VALENCIA CITY, BUKIDNON</p>
             <p style="font-size:10px; margin:0 0 10px 0;">0991 417 2982</p>
             <div style="text-align:left; border-top:1px dashed black; padding-top:5px;">
@@ -331,7 +336,7 @@ window.printCurrentReceipt = function() {
     setTimeout(() => window.print(), 300);
 };
 
-// Best Sellers
+// 5. Best Sellers
 function renderBestSellers() {
     const sales = {};
     (getData().transactions||[]).forEach(t => { t.items.forEach(i => { sales[i.name] = (sales[i.name] || 0) + (i.qty || 1); }); });
@@ -344,7 +349,7 @@ function renderBestSellers() {
     `).join('') : '<p class="text-sm text-secondary-400">No sales yet.</p>';
 }
 
-// POS
+// 6. POS Logic
 function initPOS() {
     const inv = getData().inventory.filter(i=>i.stock>0 && i.status==='Ready');
     document.getElementById('pos-item').innerHTML = inv.map(i=>`<option value="${i.id}">${i.name} (₱${i.price})</option>`).join('');
@@ -399,7 +404,7 @@ function renderQueue() {
 }
 window.printBatch = function() { window.print(); };
 
-// Poster Generator
+// 7. Poster Generator
 window.openPosterModal = function() {
     document.getElementById('modal-poster').classList.remove('hidden');
     window.generatePoster();
@@ -458,27 +463,3 @@ window.exportBackup = function() {
     a.download = `Backup_${Date.now()}.json`;
     a.click();
 };
-
-// Init Load
-document.addEventListener('DOMContentLoaded', () => {
-    const local = localStorage.getItem('eg_offline_data');
-    if(local) window.appData = JSON.parse(local);
-    document.getElementById('current-date').innerText = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-    
-    // Bind Buttons manually just in case
-    document.getElementById('btn-signin-overlay').onclick = window.cloudLogin;
-    document.getElementById('btn-signin-modal').onclick = window.cloudLogin;
-    document.getElementById('btn-offline').onclick = window.enableOfflineMode;
-    
-    // Valencia City, Bukidnon Weather
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=7.9066&longitude=125.0945&current_weather=true&daily=precipitation_probability_max&timezone=auto')
-    .then(r=>r.json()).then(d=>{
-        if(d.current_weather){
-            document.getElementById('w-temp').innerText = Math.round(d.current_weather.temperature) + "°C";
-            document.getElementById('w-desc').innerText = "Live";
-            if(d.daily) document.getElementById('w-rain').innerText = d.daily.precipitation_probability_max[0] + "%";
-        }
-    }).catch(()=>{ document.getElementById('w-desc').innerText = "Offline"; });
-});
-
-</script>
