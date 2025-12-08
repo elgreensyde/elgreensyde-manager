@@ -2,7 +2,102 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// --- FIREBASE SETUP ---
+// --- GLOBAL VARIABLES ---
+window.appData = { inventory: [], finance: [], transactions: [] };
+window.isOffline = false;
+let orderQueue = [];
+let currentCart = [];
+let currentReceiptId = null;
+
+// --- 1. DEFINE UI FUNCTIONS FIRST (Fixes the "Stuck Button" issue) ---
+
+// Navigation Logic
+window.nav = function(id) {
+    document.querySelectorAll('.view-section').forEach(e => e.classList.add('hidden'));
+    const view = document.getElementById('view-' + id);
+    if(view) view.classList.remove('hidden');
+    
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active', 'text-white'));
+    const btn = document.getElementById('nav-' + id);
+    if(btn) btn.classList.add('active', 'text-white');
+    
+    if(id === 'sales') initPOS();
+};
+
+window.finNav = function(id) {
+    document.querySelectorAll('.fin-view').forEach(e => e.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    
+    document.querySelectorAll('.fin-nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-' + id).classList.add('active');
+};
+
+// Modal Logic
+window.openModal = function(id, add) { 
+    document.getElementById(id).classList.remove('hidden');
+    if(add && id === 'modal-add-item') {
+        document.getElementById('edit-id').value = '';
+        document.getElementById('new-name').value = '';
+        document.getElementById('new-price').value = '';
+        document.getElementById('new-stock').value = '';
+    }
+};
+window.closeModal = function(id) { document.getElementById(id).classList.add('hidden'); };
+window.openCloudModal = function() { document.getElementById('cloud-modal').classList.remove('hidden'); };
+
+// Offline Mode Override
+window.enableOfflineMode = function() {
+    window.isOffline = true;
+    document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('main-app').classList.remove('hidden');
+    window.refreshUI();
+};
+
+// --- 2. CORE LOGIC ---
+
+function getData() { return window.appData; }
+
+// Save Function
+window.saveData = function(d) {
+    window.appData = d;
+    localStorage.setItem('eg_offline_data', JSON.stringify(d));
+    if(window.currentUser && window.saveToCloud) window.saveToCloud();
+    window.refreshUI();
+    showToast();
+};
+
+window.refreshUI = function() {
+    const d = getData();
+    // Dashboard Stats
+    const rev = (d.transactions||[]).reduce((a,b)=>a+b.total,0);
+    const exp = (d.finance||[]).reduce((a,b)=>a+b.amount,0);
+    
+    const dashRev = document.getElementById('dash-rev');
+    if(dashRev) dashRev.innerText = rev.toLocaleString();
+    
+    const dashExp = document.getElementById('dash-exp');
+    if(dashExp) dashExp.innerText = exp.toLocaleString();
+    
+    const dashNet = document.getElementById('dash-net');
+    if(dashNet) dashNet.innerText = (rev - exp).toLocaleString();
+    
+    renderInventory();
+    renderFinance();
+    renderSalesLog();
+    renderBestSellers();
+    initPOS();
+};
+
+function showToast(m="Saved") { 
+    const t = document.getElementById('toast');
+    if(t) {
+        t.innerText = m;
+        t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 2000);
+    }
+}
+
+// --- 3. FIREBASE SETUP ---
 const config = {
     apiKey: "AIzaSyChkSQg-wBbNSOsm3iDn4UxPMACe8lfMj0",
     authDomain: "elgreensyde-ef4f0.firebaseapp.com",
@@ -16,37 +111,41 @@ const config = {
 const app = initializeApp(config);
 const db = getFirestore(app);
 const auth = getAuth(app);
-let currentUser = null;
+window.currentUser = null;
 
-// --- GLOBAL STATE ---
-window.appData = { inventory: [], finance: [], transactions: [] };
-window.isOffline = false;
-let orderQueue = [];
-let currentCart = [];
-let currentReceiptId = null;
-
-// --- AUTH LOGIC ---
+// Auth Functions
 window.cloudLogin = async () => {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); } 
-    catch(e) { alert("Login failed: " + e.message); console.error(e); }
+    catch(e) { alert("Login failed: " + e.message); }
 };
 
 window.cloudLogout = () => signOut(auth).then(() => location.reload());
 
-// Auth State Listener
+window.saveToCloud = async () => {
+    if (window.currentUser) {
+        await setDoc(doc(db, "users", window.currentUser.uid), window.appData);
+    }
+};
+
+// Auth Listener
 onAuthStateChanged(auth, (user) => {
     const dot = document.getElementById('cloud-indicator');
     if(user) {
-        currentUser = user;
+        window.currentUser = user;
         if(dot) { dot.classList.remove('bg-gray-400'); dot.classList.add('bg-green-500'); }
         document.getElementById('auth-overlay').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
         
-        // Real-time Cloud Sync
+        // Modal State
+        document.getElementById('cloud-login-view').classList.add('hidden');
+        document.getElementById('cloud-user-view').classList.remove('hidden');
+        document.getElementById('user-email').innerText = user.email;
+
+        // Hot Sync (No Reload)
         onSnapshot(doc(db, "users", user.uid), (snap) => {
             if(snap.exists()) {
                 window.appData = snap.data();
-                window.refreshUI(); 
+                window.refreshUI();
             }
         });
     } else {
@@ -55,80 +154,15 @@ onAuthStateChanged(auth, (user) => {
             document.getElementById('auth-overlay').classList.remove('hidden');
             document.getElementById('main-app').classList.add('hidden');
         }
+        document.getElementById('cloud-login-view').classList.remove('hidden');
+        document.getElementById('cloud-user-view').classList.add('hidden');
     }
 });
 
-// Save Function (Local + Cloud)
-window.saveData = (d) => {
-    window.appData = d;
-    localStorage.setItem('eg_offline_data', JSON.stringify(d));
-    if(currentUser) {
-        setDoc(doc(db, "users", currentUser.uid), window.appData).catch(console.error);
-    }
-    window.refreshUI();
-    showToast();
-};
 
-function getData() { return window.appData; }
-function showToast(m="Saved") { 
-    const t=document.getElementById('toast'); 
-    t.innerText=m; 
-    t.className="show"; 
-    setTimeout(()=>t.className="",2000); 
-}
+// --- 4. FEATURE LOGIC ---
 
-// --- INIT ---
-document.addEventListener('DOMContentLoaded', () => {
-    const local = localStorage.getItem('eg_offline_data');
-    if(local) window.appData = JSON.parse(local);
-    document.getElementById('current-date').innerText = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-    fetchWeather();
-    
-    // Bind Buttons
-    document.getElementById('btn-signin-overlay').addEventListener('click', window.cloudLogin);
-    document.getElementById('btn-offline').addEventListener('click', enableOfflineMode);
-});
-
-function enableOfflineMode() {
-    window.isOffline = true;
-    document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('main-app').classList.remove('hidden');
-    window.refreshUI();
-}
-
-// --- CORE UI REFRESH ---
-window.refreshUI = function() {
-    const d = getData();
-    const rev = (d.transactions||[]).reduce((a,b)=>a+b.total,0);
-    const exp = (d.finance||[]).reduce((a,b)=>a+b.amount,0);
-    
-    document.getElementById('dash-rev').innerText = rev.toLocaleString();
-    document.getElementById('dash-exp').innerText = exp.toLocaleString();
-    document.getElementById('dash-net').innerText = (rev-exp).toLocaleString();
-    
-    renderInventory();
-    renderFinance();
-    renderSalesLog();
-    renderBestSellers();
-    initPOS();
-};
-
-// --- FEATURES ---
-
-// 1. Weather
-function fetchWeather() {
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=7.9066&longitude=125.0945&current_weather=true&daily=precipitation_probability_max&timezone=auto')
-    .then(r=>r.json())
-    .then(d=>{
-        if(d.current_weather){
-            document.getElementById('w-temp').innerText = Math.round(d.current_weather.temperature) + "°C";
-            document.getElementById('w-desc').innerText = "Live Update";
-            if(d.daily) document.getElementById('w-rain').innerText = d.daily.precipitation_probability_max[0] + "%";
-        }
-    }).catch(()=>{ document.getElementById('w-desc').innerText = "Offline"; });
-}
-
-// 2. Inventory
+// Inventory
 function renderInventory() {
     const d = getData();
     const f = document.getElementById('inv-filter').value;
@@ -155,7 +189,46 @@ function renderInventory() {
     }).join('');
 }
 
-// 3. Finance
+window.saveItem = function() {
+    const idVal = document.getElementById('edit-id').value;
+    const id = idVal ? parseInt(idVal) : Date.now();
+    const item = {
+        id,
+        name: document.getElementById('new-name').value,
+        cat: document.getElementById('new-cat').value,
+        price: parseFloat(document.getElementById('new-price').value)||0,
+        stock: parseFloat(document.getElementById('new-stock').value)||0,
+        status: document.getElementById('new-status').value,
+        cost: parseFloat(document.getElementById('new-cost').value)||0,
+        last: new Date().toLocaleDateString()
+    };
+    const d = getData();
+    const idx = d.inventory.findIndex(x=>x.id==id);
+    if(idx !== -1) d.inventory[idx]=item; else d.inventory.push(item);
+    window.saveData(d); window.closeModal('modal-add-item');
+};
+
+window.editItem = function(id) {
+    const i=getData().inventory.find(x=>x.id==id); if(!i)return;
+    document.getElementById('edit-id').value=i.id;
+    document.getElementById('new-name').value=i.name;
+    document.getElementById('new-price').value=i.price;
+    document.getElementById('new-stock').value=i.stock;
+    document.getElementById('new-cost').value=i.cost||'';
+    document.getElementById('new-cat').value=i.cat;
+    document.getElementById('new-status').value=i.status;
+    window.openModal('modal-add-item');
+};
+
+window.deleteItem = function(id) {
+    if(confirm('Delete?')){ 
+        const d=getData(); 
+        d.inventory=d.inventory.filter(x=>x.id!=id); 
+        window.saveData(d); 
+    }
+};
+
+// Finance
 window.addExpense = function() {
     const desc = document.getElementById('fin-desc').value;
     const amt = parseFloat(document.getElementById('fin-amt').value);
@@ -195,7 +268,6 @@ window.deleteAllFinance = function() {
     }
 };
 
-// 4. Sales Log & Receipt
 function renderSalesLog() {
     document.getElementById('sales-table').innerHTML = (getData().transactions||[]).slice().reverse().map(t=>`
         <tr class="border-b dark:border-secondary-700">
@@ -210,6 +282,13 @@ function renderSalesLog() {
         </tr>
     `).join('');
 }
+
+window.deleteTransaction = function(id) {
+    if(!confirm("Delete this record?")) return;
+    const d = getData();
+    d.transactions = d.transactions.filter(t => t.id !== id);
+    window.saveData(d);
+};
 
 window.viewReceipt = function(id) {
     const t = getData().transactions.find(x => x.id === id); if(!t) return;
@@ -252,7 +331,7 @@ window.printCurrentReceipt = function() {
     setTimeout(() => window.print(), 300);
 };
 
-// 5. Best Sellers
+// Best Sellers
 function renderBestSellers() {
     const sales = {};
     (getData().transactions||[]).forEach(t => { t.items.forEach(i => { sales[i.name] = (sales[i.name] || 0) + (i.qty || 1); }); });
@@ -265,7 +344,7 @@ function renderBestSellers() {
     `).join('') : '<p class="text-sm text-secondary-400">No sales yet.</p>';
 }
 
-// 6. POS Logic
+// POS
 function initPOS() {
     const inv = getData().inventory.filter(i=>i.stock>0 && i.status==='Ready');
     document.getElementById('pos-item').innerHTML = inv.map(i=>`<option value="${i.id}">${i.name} (₱${i.price})</option>`).join('');
@@ -294,14 +373,33 @@ window.checkout = function() {
     d.transactions.push({id:Date.now(), date:new Date().toLocaleDateString(), customer:document.getElementById('pos-cust').value||'Guest', total, items:currentCart});
     window.saveData(d); currentCart=[]; renderCart(); alert("Saved");
 };
+window.undoLastSale = function() {
+    const d=getData(); 
+    if(d.transactions.length && confirm('Undo last?')) { 
+        const l=d.transactions.pop(); 
+        l.items.forEach(i=>{if(typeof i.id==='number'){const p=d.inventory.find(x=>x.id==i.id); if(p) p.stock+=i.qty;}}); 
+        window.saveData(d); 
+        showToast("Undone"); 
+    } 
+};
 window.updatePosPreview = function() {
     const s=document.getElementById('pos-item');
     if(!s.value) return;
     const i=getData().inventory.find(x=>x.id==s.value);
     if(i) document.getElementById('pos-profit-preview').innerText = `Profit: ₱${(i.price - (i.cost||0)).toFixed(2)}`;
 };
+window.queueOrder = function() { 
+    const c=document.getElementById('pos-cust').value||"Guest"; 
+    const t=currentCart.reduce((a,b)=>a+(b.price*(b.qty||1)),0); 
+    orderQueue.push({customer:c, total:t, items:JSON.parse(JSON.stringify(currentCart))}); 
+    currentCart=[]; renderCart(); renderQueue(); showToast("Queued"); 
+};
+function renderQueue() { 
+    document.getElementById('order-queue-list').innerHTML = orderQueue.map((o,i)=>`<div class="bg-secondary-50 p-2 rounded mb-1 flex justify-between"><div><b>${o.customer}</b><br><span class="text-xs">₱${o.total}</span></div><button onclick="orderQueue.splice(${i},1);renderQueue()" class="text-red-500">x</button></div>`).join(''); 
+}
+window.printBatch = function() { window.print(); };
 
-// 7. Poster Generator
+// Poster Generator
 window.openPosterModal = function() {
     document.getElementById('modal-poster').classList.remove('hidden');
     window.generatePoster();
@@ -313,7 +411,6 @@ window.generatePoster = function() {
     const showPrice = document.getElementById('poster-show-price').checked;
     const showSold = document.getElementById('poster-show-sold').checked;
     
-    // Random Footer Text
     const quotes = ["Thank you for growing with us!", "Plant happiness!", "Keep growing!", "Support local!", "Nature in your hands."];
     document.getElementById('poster-footer-random').innerText = quotes[Math.floor(Math.random()*quotes.length)];
 
@@ -337,7 +434,6 @@ window.generatePoster = function() {
     document.getElementById('poster-items').innerHTML = html;
     document.getElementById('poster-date').innerText = "Date: " + new Date().toLocaleDateString();
     
-    // Footnote for Growing items
     const footnote = document.getElementById('poster-footer-note');
     if(hasGrowing) {
         footnote.style.display = 'block';
@@ -355,19 +451,34 @@ window.downloadPoster = function(type) {
     });
 };
 
-// Utils (Global exposure for HTML onclick)
-window.nav = nav;
-window.finNav = finNav;
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.openCloudModal = openCloudModal;
-window.saveItem = saveItem;
-window.deleteItem = deleteItem;
-window.editItem = editItem;
-window.deleteTransaction = deleteTransaction;
+// Utils
 window.exportBackup = function() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(getData())], {type:'application/json'}));
     a.download = `Backup_${Date.now()}.json`;
     a.click();
 };
+
+// Init Load
+document.addEventListener('DOMContentLoaded', () => {
+    const local = localStorage.getItem('eg_offline_data');
+    if(local) window.appData = JSON.parse(local);
+    document.getElementById('current-date').innerText = new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    
+    // Bind Buttons manually just in case
+    document.getElementById('btn-signin-overlay').onclick = window.cloudLogin;
+    document.getElementById('btn-signin-modal').onclick = window.cloudLogin;
+    document.getElementById('btn-offline').onclick = window.enableOfflineMode;
+    
+    // Valencia City, Bukidnon Weather
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=7.9066&longitude=125.0945&current_weather=true&daily=precipitation_probability_max&timezone=auto')
+    .then(r=>r.json()).then(d=>{
+        if(d.current_weather){
+            document.getElementById('w-temp').innerText = Math.round(d.current_weather.temperature) + "°C";
+            document.getElementById('w-desc').innerText = "Live";
+            if(d.daily) document.getElementById('w-rain').innerText = d.daily.precipitation_probability_max[0] + "%";
+        }
+    }).catch(()=>{ document.getElementById('w-desc').innerText = "Offline"; });
+});
+
+</script>
