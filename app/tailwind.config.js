@@ -48,8 +48,9 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        display: ['Outfit', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Fredoka', 'Inter', 'system-ui', 'sans-serif'],
+        mono: ['"Courier Prime"', 'monospace'],
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out',

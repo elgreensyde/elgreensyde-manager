@@ -1,20 +1,37 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, CheckCircle2, Clock, AlertTriangle, X } from 'lucide-react';
 import db from '../services/db';
+import { runDailyTaskGeneration } from '../services/taskAutomation';
 
 function Tasks() {
   const [tasks, setTasks] = useState([]);
   const [batches, setBatches] = useState([]);
   const [crops, setCrops] = useState([]);
+  const [plots, setPlots] = useState([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Normal', batch_id: '' });
+  const [form, setForm] = useState({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' });
 
   const loadData = async () => {
     await db.markOverdueTasks();
-    const [t, b, c] = await Promise.all([db.getAll('tasks'), db.getAll('batches'), db.getAll('crops')]);
-    setTasks(t); setBatches(b); setCrops(c); setLoading(false);
+    const [t, b, c, p, h, i] = await Promise.all([
+      db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
+      db.getAll('plots') || [], db.getAll('harvest_logs') || [], db.getAll('inventory') || []
+    ]);
+    
+    // Auto-generate passive tasks based on PRD conditions
+    const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
+    if (newTasks.length > 0) {
+      await db.insertMany('tasks', newTasks);
+      // Reload newly inserted tasks
+      const latestTasks = await db.getAll('tasks');
+      setTasks(latestTasks || []);
+    } else {
+      setTasks(t || []);
+    }
+
+    setBatches(b || []); setCrops(c || []); setPlots(p || []); setLoading(false);
   };
   useEffect(() => { loadData(); }, []);
 
@@ -28,11 +45,13 @@ function Tasks() {
 
   const completeTask = async (taskId) => { await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() }); loadData(); };
 
-  const handleSubmit = async (e) => { e.preventDefault(); await db.insert('tasks', { ...form, status: 'Pending', is_auto_generated: false }); setShowForm(false); setForm({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Normal', batch_id: '' }); loadData(); };
+  const handleSubmit = async (e) => { e.preventDefault(); await db.insert('tasks', { title: form.title, due_date: form.due_date, priority: form.priority, batch_id: form.batch_id || null, plot_id: form.plot_id || null, status: 'Pending', is_auto_generated: false }); setShowForm(false); setForm({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' }); loadData(); };
 
-  const getBatchLabel = (batchId) => { if (!batchId) return null; const batch = batches.find(b => b.id === batchId); const crop = batch ? crops.find(c => c.id === batch.crop_id) : null; return batch ? `${batch.batch_code} ${crop?.common_name||''}` : null; };
+  const deleteTask = async (taskId) => { if (confirm('Delete this task?')) { await db.delete('tasks', taskId); loadData(); } };
+  const getBatchLabel = (batchId) => { if (!batchId) return null; const batch = batches.find(b => b.id === batchId || b.batch_id === batchId); const crop = batch ? crops.find(c => c.id === batch.crop_id) : null; return batch ? `${batch.batch_code} ${crop?.common_name||''}` : null; };
+  const getPlotLabel = (plotId) => { if (!plotId) return null; const plot = plots.find(p => p.id === plotId || p.plot_id === plotId); return plot ? plot.plot_code : null; };
 
-  const priorityColors = { Critical: 'text-red-500 bg-red-500/10', High: 'text-amber-500 bg-amber-500/10', Normal: 'bg-green-500/10 text-green-600', Low: 'bg-gray-500/10 text-gray-500' };
+  const priorityColors = { Critical: 'text-red-500 bg-red-500/10', High: 'text-amber-500 bg-amber-500/10', Medium: 'bg-blue-500/10 text-blue-500', Normal: 'bg-green-500/10 text-green-600', Low: 'bg-gray-500/10 text-gray-500' };
   const statusConfigs = { Overdue: { icon: AlertTriangle, color: 'text-red-500', border: 'border-l-red-500/70' }, Pending: { icon: Clock, color: 'text-amber-500', border: 'border-l-amber-500/50' }, Completed: { icon: CheckCircle2, color: 'text-green-500', border: 'border-l-green-500/30' } };
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="loading-spinner mx-auto" /></div>;
@@ -67,21 +86,27 @@ function Tasks() {
           const config = statusConfigs[task.status] || statusConfigs.Pending;
           const StatusIcon = config.icon;
           const batchLabel = getBatchLabel(task.batch_id);
+          const taskCategory = task.category || 'Maintenance';
+          const displayTitle = task.title || 'Untitled Operation';
+
           return (
-            <div key={task.id} className={`glass-card p-4 border-l-4 ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
+            <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
               {task.status !== 'Completed' ? (
-                <button onClick={() => completeTask(task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border-2 mt-0.5 transition-colors ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
+                <button onClick={() => completeTask(task.task_id || task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border-2 mt-0.5 transition-colors ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
               ) : <CheckCircle2 size={20} className="text-green-500/50 flex-shrink-0 mt-0.5" />}
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through' : ''}`} style={{ color: task.status === 'Completed' ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{task.title}</p>
+                <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through' : ''}`} style={{ color: task.status === 'Completed' ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{displayTitle}</p>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{task.due_date}</span>
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${priorityColors[task.priority]||''}`}>{task.priority}</span>
-                  {batchLabel && <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>{batchLabel}</span>}
+                  <span className="text-[10px] uppercase font-bold" style={{ color: 'var(--color-text-muted)' }}>{taskCategory}</span>
+                  {getBatchLabel(task.batch_id) && <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>{getBatchLabel(task.batch_id)}</span>}
+                  {getPlotLabel(task.plot_id) && <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>{getPlotLabel(task.plot_id)}</span>}
                   {task.is_auto_generated && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>⚙ auto</span>}
                 </div>
               </div>
               {task.status !== 'Completed' && <StatusIcon size={16} className={`${config.color} flex-shrink-0 mt-0.5`} />}
+              <button onClick={() => deleteTask(task.task_id || task.id)} className="text-red-400/40 hover:text-red-500 p-1 rounded transition-colors flex-shrink-0" title="Delete task"><X size={14} /></button>
             </div>
           );
         })}
@@ -99,9 +124,10 @@ function Tasks() {
               <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Task Title *</label><input type="text" required value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="input-field" placeholder="What needs to be done?" /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Due Date *</label><input type="date" required value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} className="input-field" /></div>
-                <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Priority</label><select value={form.priority} onChange={e => setForm({...form, priority: e.target.value})} className="input-field"><option value="Normal">Normal</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
+                <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Priority</label><select value={form.priority} onChange={e => setForm({...form, priority: e.target.value})} className="input-field"><option value="High">High</option><option value="Medium">Medium</option><option value="Low">Low</option></select></div>
               </div>
-              <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Link to Batch</label><select value={form.batch_id} onChange={e => setForm({...form, batch_id: e.target.value})} className="input-field"><option value="">No batch</option>{batches.filter(b => b.status === 'Active').map(b => { const crop = crops.find(c => c.id === b.crop_id); return <option key={b.id} value={b.id}>{b.batch_code} — {crop?.common_name||'Unknown'}</option>; })}</select></div>
+              <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Link to Batch</label><select value={form.batch_id} onChange={e => setForm({...form, batch_id: e.target.value})} className="input-field"><option value="">No batch</option>{batches.filter(b => b.status === 'Nursery').map(b => { const crop = crops.find(c => c.id === b.crop_id); return <option key={b.id || b.batch_id} value={b.id || b.batch_id}>{b.batch_code} — {crop?.common_name||'Unknown'}</option>; })}</select></div>
+              <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Link to Plot</label><select value={form.plot_id} onChange={e => setForm({...form, plot_id: e.target.value})} className="input-field"><option value="">No plot</option>{plots.map(p => <option key={p.id || p.plot_id} value={p.id || p.plot_id}>{p.plot_code}</option>)}</select></div>
               <button type="submit" className="btn-primary w-full justify-center !py-3">Add Task</button>
             </form>
           </div>

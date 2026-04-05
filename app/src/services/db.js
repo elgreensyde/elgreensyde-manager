@@ -3,6 +3,35 @@
 
 import supabase from '../lib/supabase';
 
+const getPK = (table) => {
+  const pkMap = {
+    plots: 'plot_id',
+    batches: 'batch_id',
+    trays: 'tray_id',
+    tasks: 'task_id',
+    maintenance_logs: 'log_id',
+    harvest_logs: 'harvest_id',
+    inventory: 'sku_id',
+    customers: 'customer_id',
+    financial_ledger: 'ledger_id',
+    inputs_inventory: 'input_id',
+    pot_watch_list: 'watch_id',
+    pricing: 'pricing_id',
+    orders: 'order_id',
+    order_line_items: 'line_item_id',
+    planting_targets: 'target_id',
+    monitoring_sessions: 'session_id',
+    checklist_responses: 'response_id',
+    recommendation_records: 'record_id',
+    flagged_issues: 'flag_id',
+    preventive_alerts: 'alert_id',
+    zones: 'zone_id',
+    away_periods: 'period_id',
+    notifications: 'notification_id'
+  };
+  return pkMap[table] || 'id';
+};
+
 export const db = {
   // GET ALL records from a table
   async getAll(table) {
@@ -22,7 +51,7 @@ export const db = {
     const { data, error } = await supabase
       .from(table)
       .select('*')
-      .eq('id', id)
+      .eq(getPK(table), id)
       .single();
     if (error) {
       console.error(`db.getById(${table}, ${id}):`, error.message);
@@ -63,7 +92,7 @@ export const db = {
     const { data, error } = await supabase
       .from(table)
       .update(updates)
-      .eq('id', id)
+      .eq(getPK(table), id)
       .select()
       .single();
     if (error) {
@@ -78,7 +107,7 @@ export const db = {
     const { error } = await supabase
       .from(table)
       .delete()
-      .eq('id', id);
+      .eq(getPK(table), id);
     if (error) {
       console.error(`db.delete(${table}, ${id}):`, error.message);
       return false;
@@ -113,6 +142,20 @@ export const db = {
     return `B-${year}-${num}`;
   },
 
+  // QUERY JSONB contains (for target_ids array)
+  async queryContains(table, column, id) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .contains(column, JSON.stringify([id]))
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error(`db.queryContains(${table}, ${column}, ${id}):`, error.message);
+      return [];
+    }
+    return data || [];
+  },
+
   // Batch update for overdue tasks
   async markOverdueTasks() {
     const today = new Date().toISOString().split('T')[0];
@@ -122,17 +165,6 @@ export const db = {
       .eq('status', 'Pending')
       .lt('due_date', today);
     if (error) console.error('markOverdueTasks:', error.message);
-  },
-
-  // Auto-unlock expired IPM withholdings
-  async unlockExpiredIPM() {
-    const today = new Date().toISOString().split('T')[0];
-    const { error } = await supabase
-      .from('batches')
-      .update({ ipm_locked: false, ipm_unlock_date: null })
-      .eq('ipm_locked', true)
-      .lte('ipm_unlock_date', today);
-    if (error) console.error('unlockExpiredIPM:', error.message);
   },
 };
 

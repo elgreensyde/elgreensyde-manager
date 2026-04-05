@@ -1,198 +1,272 @@
 -- =============================================
--- ELGREENSYDE FARM MANAGEMENT SYSTEM
+-- ELGREENSYDE FARM MANAGEMENT SYSTEM - VERSION 2.0
 -- Supabase PostgreSQL Migration
 -- Run this in the Supabase SQL Editor
 -- =============================================
 
--- 1. CROP LIBRARY
+-- WARNING: This completely wipes the old V1 schema and data
+DROP TABLE IF EXISTS financial_ledger CASCADE;
+DROP TABLE IF EXISTS planting_targets CASCADE;
+DROP TABLE IF EXISTS order_line_items CASCADE;
+DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
+DROP TABLE IF EXISTS maintenance_logs CASCADE;
+DROP TABLE IF EXISTS trays CASCADE;
+DROP TABLE IF EXISTS harvest_logs CASCADE;
+DROP TABLE IF EXISTS batches CASCADE;
+DROP TABLE IF EXISTS plots CASCADE;
+DROP TABLE IF EXISTS pricing CASCADE;
+DROP TABLE IF EXISTS inventory CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS sales CASCADE;
+DROP TABLE IF EXISTS expenses CASCADE;
+DROP TABLE IF EXISTS feeding_log CASCADE;
+DROP TABLE IF EXISTS ipm_treatments CASCADE;
+DROP TABLE IF EXISTS ipm_scouting CASCADE;
+DROP TABLE IF EXISTS nutrient_mixes CASCADE;
+DROP TABLE IF EXISTS inventory_log CASCADE;
+DROP TABLE IF EXISTS inventory_items CASCADE;
+DROP TABLE IF EXISTS crops CASCADE;
+DROP TABLE IF EXISTS zones CASCADE;
+
+-- =============================================
+-- MODULE 1: CUSTOMERS & PRICING
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS customers (
+  customer_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  contact_number TEXT,
+  address TEXT,
+  type TEXT DEFAULT 'Walk-in' CHECK (type IN ('Wholesale', 'Walk-in', 'Online')),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- MODULE 2: LIVE INVENTORY & PRICING
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS inventory (
+  sku_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku_code TEXT UNIQUE NOT NULL,
+  product_name TEXT NOT NULL,
+  sales_format TEXT DEFAULT 'Units' CHECK (sales_format IN ('Units', 'Grams')),
+  current_stock DECIMAL NOT NULL DEFAULT 0,
+  restock_alert_level DECIMAL NOT NULL DEFAULT 10,
+  retail_price DECIMAL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- If migrating an existing DB, run this to add the column without dropping:
+-- ALTER TABLE inventory ADD COLUMN IF NOT EXISTS retail_price DECIMAL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS pricing (
+  pricing_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku_id UUID REFERENCES inventory(sku_id) ON DELETE CASCADE,
+  retail_price DECIMAL NOT NULL,
+  wholesale_price DECIMAL NOT NULL,
+  min_order DECIMAL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- MODULE 3: CULTIVATION PIPELINES (Plots, Batches, Trays)
+-- =============================================
+
+-- The master crops library (from v1)
 CREATE TABLE IF NOT EXISTS crops (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   common_name TEXT NOT NULL,
+  scientific_name TEXT,
   category TEXT CHECK (category IN ('Microgreen', 'Herb', 'Edible Flower', 'Vegetable')),
+  family TEXT,
   default_prop_method TEXT CHECK (default_prop_method IN ('Seed', 'Cutting', 'Division')),
+  
+  -- Lifecycle (Doc1/Doc2)
   days_to_maturity INTEGER NOT NULL,
   rooting_or_germ_days INTEGER NOT NULL,
   harvest_window_days INTEGER NOT NULL,
-  ec_min DECIMAL, ec_max DECIMAL,
-  ph_min DECIMAL, ph_max DECIMAL,
+  nursery_days_req INTEGER DEFAULT 0,
+  
+  -- JSONB Fields for Scalability
+  stages JSONB DEFAULT '[]', -- [{name: 'Nursery', days: 14, task: 'Thinning'}]
+  varieties JSONB DEFAULT '[]', 
+  soil_mix JSONB DEFAULT '{}', -- {type: 'Mix A', components: ['Coco', 'Perlite']}
+  fertilizer_schedule JSONB DEFAULT '[]', -- [{week: 1, product: 'Urea', dosage: '1g/L'}]
+  weather_thresholds JSONB DEFAULT '{}', -- {temp_max: 32, rain_trigger: 5, spray_interval: 7}
+  pest_atlas JSONB DEFAULT '[]', -- [{name: 'Aphids', remedy: 'Neem Oil'}]
+  disease_atlas JSONB DEFAULT '[]', -- [{name: 'Downy Mildew', remedy: 'K-Bicarb'}]
+  checklist_questions JSONB DEFAULT '[]',
+  
   yield_estimate TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. BATCHES
+-- Pipeline A: Plot-to-Gram
+CREATE TABLE IF NOT EXISTS plots (
+  plot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plot_code TEXT UNIQUE NOT NULL, -- e.g., PLT-BSL-01
+  crop_id UUID REFERENCES crops(id),
+  sowing_date DATE NOT NULL,
+  status TEXT DEFAULT 'Cleared' CHECK (status IN ('Active', 'Ready to Clear', 'Cleared', 'Resting')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS harvest_logs (
+  log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plot_id UUID REFERENCES plots(plot_id) ON DELETE CASCADE,
+  harvest_date DATE NOT NULL,
+  yield_weight_g DECIMAL NOT NULL,
+  cull_weight_g DECIMAL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Pipeline B: Batch-to-Pot
 CREATE TABLE IF NOT EXISTS batches (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  batch_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   batch_code TEXT UNIQUE NOT NULL,
   crop_id UUID REFERENCES crops(id),
-  propagation_method TEXT CHECK (propagation_method IN ('Seed', 'Cutting', 'Division')),
-  planting_date DATE NOT NULL,
-  quantity INTEGER NOT NULL,
-  unit TEXT DEFAULT 'pots',
-  growing_zone TEXT,
-  status TEXT DEFAULT 'Active' CHECK (status IN ('Active', 'Ready', 'Harvested', 'Sold', 'Discarded')),
-  ipm_locked BOOLEAN DEFAULT FALSE,
-  ipm_unlock_date DATE,
+  propagation_method TEXT CHECK (propagation_method IN ('Seed', 'Kratky', 'Soil Cuttings')),
+  start_date DATE NOT NULL,
+  initial_quantity INTEGER NOT NULL,
+  mortality INTEGER DEFAULT 0,
+  market_ready_quantity INTEGER DEFAULT 0,
+  input_cost DECIMAL DEFAULT 0,
+  status TEXT DEFAULT 'Nursery' CHECK (status IN ('Nursery', 'Completed', 'Discarded')),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Propagation Trays
+CREATE TABLE IF NOT EXISTS trays (
+  tray_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tray_code TEXT UNIQUE NOT NULL,
+  crop_id UUID REFERENCES crops(id),
+  sowing_date DATE NOT NULL,
+  growing_medium TEXT,
+  target_transplant_date DATE NOT NULL,
+  status TEXT DEFAULT 'Sown' CHECK (status IN ('Sown', 'Germinated', 'Ready', 'Transplanted', 'Completed')),
+  assigned_plot_id UUID REFERENCES plots(plot_id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- MODULE 4: MAINTENANCE LOG & TASKS
+-- =============================================
+
+-- Unified Maintenance Log (Pest & Fertilizer)
+CREATE TABLE IF NOT EXISTS maintenance_logs (
+  log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plot_id UUID REFERENCES plots(plot_id), -- Can be NULL if applied to batch
+  batch_id UUID REFERENCES batches(batch_id), -- Can be NULL if applied to plot
+  event_date DATE NOT NULL,
+  action_category TEXT CHECK (action_category IN ('Fertilize', 'Pest Treatment', 'Scouting')),
+  target_ids JSONB DEFAULT '[]', -- NEW: Array of plot_ids or batch_ids
+  method_product TEXT NOT NULL,
+  dosage_rate TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. TASKS
+-- Task Queue
 CREATE TABLE IF NOT EXISTS tasks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  batch_id UUID REFERENCES batches(id),
+  task_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plot_id UUID REFERENCES plots(plot_id),
+  batch_id UUID REFERENCES batches(batch_id),
   title TEXT NOT NULL,
   due_date DATE NOT NULL,
+  priority TEXT CHECK (priority IN ('High', 'Medium', 'Low')),
   status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Completed', 'Overdue')),
-  priority TEXT DEFAULT 'Normal' CHECK (priority IN ('Normal', 'High', 'Critical')),
-  is_auto_generated BOOLEAN DEFAULT TRUE,
-  completed_at TIMESTAMPTZ,
+  is_auto_generated BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. INVENTORY ITEMS
-CREATE TABLE IF NOT EXISTS inventory_items (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  category TEXT,
-  current_qty DECIMAL NOT NULL DEFAULT 0,
-  unit TEXT NOT NULL,
-  min_threshold DECIMAL NOT NULL DEFAULT 0,
-  cost_per_unit DECIMAL,
+-- =============================================
+-- MODULE 5: ORDERS & POS
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS orders (
+  order_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_number TEXT UNIQUE NOT NULL,
+  customer_id UUID REFERENCES customers(customer_id),
+  status TEXT DEFAULT 'Pending' CHECK (status IN ('Pending', 'Confirmed', 'Packed', 'Fulfilled')),
+  delivery_status TEXT CHECK (delivery_status IN ('Packed', 'Out for Delivery', 'Delivered')),
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. INVENTORY LOG
-CREATE TABLE IF NOT EXISTS inventory_log (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id UUID REFERENCES inventory_items(id),
-  change_qty DECIMAL NOT NULL,
-  reason TEXT,
-  batch_id UUID REFERENCES batches(id),
-  recorded_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 6. SALES
-CREATE TABLE IF NOT EXISTS sales (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  sale_date TIMESTAMPTZ DEFAULT NOW(),
-  batch_id UUID REFERENCES batches(id),
-  sell_type TEXT CHECK (sell_type IN ('Per Gram', 'Potted Plant', 'Seedling', 'Runner')),
+CREATE TABLE IF NOT EXISTS order_line_items (
+  line_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(order_id) ON DELETE CASCADE,
+  sku_id UUID REFERENCES inventory(sku_id),
   quantity DECIMAL NOT NULL,
-  unit_price DECIMAL,
-  total_amount DECIMAL NOT NULL,
-  payment_method TEXT,
-  notes TEXT,
+  unit_price DECIMAL NOT NULL,
+  total DECIMAL NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. EXPENSES
-CREATE TABLE IF NOT EXISTS expenses (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  expense_date DATE NOT NULL,
-  category TEXT,
-  description TEXT NOT NULL,
+-- =============================================
+-- MODULE 6: FINANCE (Cash P&L)
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS financial_ledger (
+  ledger_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID REFERENCES orders(order_id),
+  entry_type TEXT CHECK (entry_type IN ('Revenue', 'Direct Expense')),
   amount DECIMAL NOT NULL,
-  batch_id UUID REFERENCES batches(id),
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 8. NUTRIENT MIXES
-CREATE TABLE IF NOT EXISTS nutrient_mixes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  mix_date DATE NOT NULL,
-  recipe_name TEXT,
-  volume_liters DECIMAL,
-  components JSONB,
-  target_ec DECIMAL,
-  target_ph DECIMAL,
-  actual_ec DECIMAL,
-  actual_ph DECIMAL,
-  applied_to TEXT,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 9. FEEDING LOG
-CREATE TABLE IF NOT EXISTS feeding_log (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  feed_date DATE NOT NULL,
-  batch_id UUID REFERENCES batches(id),
-  zone TEXT,
-  product_applied TEXT,
-  dosage TEXT,
-  ec_after DECIMAL,
-  ph_after DECIMAL,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 10. IPM SCOUTING
-CREATE TABLE IF NOT EXISTS ipm_scouting (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  scout_date DATE NOT NULL,
-  batch_id UUID REFERENCES batches(id),
-  zone TEXT,
-  pest_disease TEXT,
-  severity TEXT CHECK (severity IN ('Low', 'Medium', 'High', 'Critical')),
-  action_taken TEXT,
-  notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 11. IPM TREATMENTS
-CREATE TABLE IF NOT EXISTS ipm_treatments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  treatment_date DATE NOT NULL,
-  batch_id UUID REFERENCES batches(id),
-  zone TEXT,
-  treatment_used TEXT NOT NULL,
-  volume_applied TEXT,
-  method TEXT,
-  withholding_days INTEGER NOT NULL,
-  safe_harvest_date DATE NOT NULL,
-  notes TEXT,
+  description TEXT NOT NULL,
+  entry_date DATE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- =============================================
--- DISABLE RLS FOR SOLO OPERATOR (simplicity)
+-- MODULE 7: PLANTING TARGETS
 -- =============================================
-ALTER TABLE crops ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS planting_targets (
+  target_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku_id UUID REFERENCES inventory(sku_id),
+  weekly_target_qty DECIMAL NOT NULL,
+  avg_nursery_days INTEGER NOT NULL,
+  next_target_date DATE NOT NULL,
+  required_sow_date DATE NOT NULL,
+  alert_date DATE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- ROW LEVEL SECURITY (RLS) FOR SOLO OPERATOR
+-- =============================================
+
+-- Enable RLS for all new tables
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pricing ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harvest_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE trays ENABLE ROW LEVEL SECURITY;
+ALTER TABLE maintenance_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE nutrient_mixes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE feeding_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ipm_scouting ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ipm_treatments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_line_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE financial_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE planting_targets ENABLE ROW LEVEL SECURITY;
 
--- Allow full access with anon key (solo operator)
-CREATE POLICY "Allow all access" ON crops FOR ALL USING (true) WITH CHECK (true);
+-- Allow full access for solo operator
+CREATE POLICY "Allow all access" ON customers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON inventory FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON pricing FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON plots FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON harvest_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON batches FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON trays FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON maintenance_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON tasks FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON inventory_items FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON inventory_log FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON sales FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON expenses FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON nutrient_mixes FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON feeding_log FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON ipm_scouting FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all access" ON ipm_treatments FOR ALL USING (true) WITH CHECK (true);
-
--- 12. ZONES
-CREATE TABLE IF NOT EXISTS zones (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT UNIQUE NOT NULL,
-  type TEXT DEFAULT 'Plot',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE zones ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow all access" ON zones FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON orders FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON order_line_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON financial_ledger FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access" ON planting_targets FOR ALL USING (true) WITH CHECK (true);

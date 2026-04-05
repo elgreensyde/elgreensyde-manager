@@ -5,11 +5,14 @@ import html2canvas from 'html2canvas';
 import {
   Printer, AlertTriangle, Clock, CheckCircle2,
   Sprout, ShoppingCart, DollarSign, Lock, Package,
-  ChevronRight, Leaf, Sun, Moon
+  ChevronRight, Leaf, Sun, Moon, Calendar
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
 import db from '../services/db';
 import { getBatchStage } from '../services/taskEngine';
+import { runDailyTaskGeneration } from '../services/taskAutomation';
+import { generatePreventiveAlerts } from '../services/preventiveAlerts';
 
 function Dashboard() {
   const [tasks, setTasks] = useState([]);
@@ -19,15 +22,43 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const { theme, toggleTheme } = useTheme();
 
+  const [weatherBriefing, setWeatherBriefing] = useState(null);
+  const [awayPeriods, setAwayPeriods] = useState([]);
+  const [showAwayModal, setShowAwayModal] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       await db.markOverdueTasks();
-      await db.unlockExpiredIPM();
-      const [t, b, c, i] = await Promise.all([
-        db.getAll('tasks'), db.getAll('batches'),
-        db.getAll('crops'), db.getAll('inventory_items')
+      await generatePreventiveAlerts();
+      const { default: weatherService } = await import('../services/weatherService');
+      
+      const [t, b, c, i, p, h, w, away] = await Promise.all([
+        db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
+        db.getAll('inventory'), db.getAll('plots'), db.getAll('harvest_logs'),
+        weatherService.getForecast(),
+        db.getAll('away_periods')
       ]);
-      setTasks(t); setBatches(b); setCrops(c); setInventory(i);
+      
+      const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
+      if (newTasks.length > 0) {
+        await db.insertMany('tasks', newTasks);
+        const latestTasks = await db.getAll('tasks');
+        setTasks(latestTasks || []);
+      } else {
+        setTasks(t || []);
+      }
+
+      setBatches(b || []); setCrops(c || []); setInventory(i || []);
+      setAwayPeriods(away || []);
+      
+      if (w) {
+         // Aggregate 48h briefing
+         const risks = [];
+         if (w.precipitation_probability_max[0] > 70 || w.precipitation_probability_max[1] > 70) risks.push('Heavy Rain (Leach Risk)');
+         if (w.windspeed_10m_max[0] > 30 || w.windspeed_10m_max[1] > 30) risks.push('High Wind (Foliar Warning)');
+         if (w.temperature_2m_max[0] > 32 || w.temperature_2m_max[1] > 32) risks.push('Excessive Heat (Transplant Stress)');
+         setWeatherBriefing({ risks, temp: w.temperature_2m_max[0] });
+      }
     } catch (err) { console.error('Dashboard load error:', err); }
     setLoading(false);
   }, []);
@@ -35,19 +66,38 @@ function Dashboard() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const today = new Date().toISOString().split('T')[0];
+  const activeAway = useMemo(() => awayPeriods.find(p => p.start_date <= today && p.end_date >= today && p.is_active), [awayPeriods, today]);
+  
   const overdueTasks = useMemo(() => tasks.filter(t => t.status === 'Overdue'), [tasks]);
   const todayTasks = useMemo(() => tasks.filter(t => t.due_date === today && t.status === 'Pending'), [tasks, today]);
   const upcomingTasks = useMemo(() => {
     const d = new Date(); d.setDate(d.getDate() + 7);
     return tasks.filter(t => t.due_date > today && t.due_date <= d.toISOString().split('T')[0] && t.status === 'Pending');
   }, [tasks, today]);
-  const lowStockItems = useMemo(() => inventory.filter(i => i.current_qty <= i.min_threshold && i.min_threshold > 0), [inventory]);
-  const activeBatches = useMemo(() => batches.filter(b => b.status === 'Active' || b.status === 'Ready'), [batches]);
-  const expiringToday = useMemo(() => batches.filter(b => b.ipm_locked && b.ipm_unlock_date === today), [batches, today]);
+  const lowStockItems = useMemo(() => inventory.filter(i => i.current_stock <= i.restock_alert_level && i.restock_alert_level > 0), [inventory]);
+  const activeBatches = useMemo(() => batches.filter(b => b.status === 'Nursery'), [batches]); 
 
   const completeTask = async (taskId) => {
     await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() });
     loadData();
+  };
+
+  const handleCreateAway = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const start = formData.get('start');
+    const end = formData.get('end');
+    
+    await db.insert('away_periods', {
+      start_date: start,
+      end_date: end,
+      is_active: true,
+      is_acknowledged: false
+    });
+    
+    setShowAwayModal(false);
+    loadData();
+    toast.success('Away Period Scheduled');
   };
 
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -93,7 +143,7 @@ function Dashboard() {
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center"><div className="loading-spinner mx-auto mb-3" /><p className="text-themed-muted text-sm">Loading dashboard...</p></div>
+      <div className="text-center"><div className="loading-spinner mx-auto mb-3" /><p className="text-themed-muted text-sm">Loading cockpit...</p></div>
     </div>
   );
 
@@ -105,29 +155,53 @@ function Dashboard() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Leaf size={20} style={{ color: 'var(--color-badge-herb-text)' }} />
-              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-badge-herb-text)' }}>Elgreensyde</span>
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-badge-herb-text)' }}>Solo Cockpit</span>
             </div>
             <h1 className="text-2xl font-display font-bold" style={{ color: 'var(--color-text-heading)' }}>{greeting()} 🌿</h1>
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{formatDate()}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={toggleTheme} className="p-2 rounded-xl glass-card-static no-print" id="theme-toggle" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
-              {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-500" />}
+            <button onClick={() => setShowAwayModal(true)} className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+               <Calendar size={18} />
+               <span className="text-xs font-bold">{activeAway ? 'Away Mode ON' : 'Away Mode'}</span>
             </button>
-            <button onClick={generatePDF} disabled={generatingPDF} className="btn-gold !px-3 !py-2 text-xs no-print" id="print-run-sheet-btn">
-              {generatingPDF ? <div className="loading-spinner w-4 h-4 border-2" /> : <Printer size={16} />}
-              <span className="hidden sm:inline">{generatingPDF ? 'Exporting...' : 'Export to PDF'}</span>
+            <button onClick={toggleTheme} className="p-2.5 rounded-xl glass-card-static no-print" id="theme-toggle" title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+              {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-500" />}
             </button>
           </div>
         </div>
 
+        {/* 48h Weather Briefing */}
+        {weatherBriefing && (
+          <div className="mt-5 p-4 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 text-white shadow-xl flex items-center gap-5 overflow-hidden relative group">
+             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                <Sun size={64} />
+             </div>
+             <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center text-xl font-bold">
+                {Math.round(weatherBriefing.temp)}°
+             </div>
+             <div className="flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">48h Operational Briefing</p>
+                <div className="flex flex-wrap gap-2">
+                   {weatherBriefing.risks.length === 0 ? (
+                     <span className="text-xs font-medium text-emerald-400">Environment Stable — Full Ops Cleared</span>
+                   ) : weatherBriefing.risks.map(r => (
+                     <span key={r} className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1">
+                        <AlertTriangle size={8}/> {r}
+                     </span>
+                   ))}
+                </div>
+             </div>
+          </div>
+        )}
+
         {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-3 mt-5">
+        <div className="grid grid-cols-3 gap-3 mt-4">
           <div className="glass-card-static p-3 text-center">
             <div className="text-2xl font-bold font-display" style={{ color: 'var(--color-text-heading)' }}>{activeBatches.length}</div>
-            <div className="text-[10px] font-medium uppercase tracking-wider mt-1" style={{ color: 'var(--color-text-muted)' }}>Active Batches</div>
+            <div className="text-[10px] font-medium uppercase tracking-wider mt-1" style={{ color: 'var(--color-text-muted)' }}>Nursery</div>
           </div>
-          <div className="glass-card-static p-3 text-center">
+          <div className="glass-card-static p-3 text-center relative overflow-hidden">
             <div className="text-2xl font-bold font-display text-amber-500">{overdueTasks.length + todayTasks.length}</div>
             <div className="text-[10px] font-medium uppercase tracking-wider mt-1" style={{ color: 'var(--color-text-muted)' }}>Tasks Due</div>
           </div>
@@ -198,8 +272,8 @@ function Dashboard() {
             </div>
             <div className="space-y-2">
               {lowStockItems.map(item => (
-                <div key={item.id} className="glass-card p-4 border-l-4 border-l-red-500/50 flex items-center justify-between">
-                  <div><p className="text-sm font-medium text-red-500">{item.name}</p><p className="text-xs text-red-500/60 mt-0.5">{item.current_qty} {item.unit} remaining (min: {item.min_threshold})</p></div>
+                <div key={item.sku_id || item.id} className="glass-card p-4 border-l-4 border-l-red-500/50 flex items-center justify-between">
+                  <div><p className="text-sm font-medium text-red-500">{item.product_name}</p><p className="text-xs text-red-500/60 mt-0.5">{item.current_stock} {item.sales_format} remaining (min: {item.restock_alert_level})</p></div>
                   <Package size={16} className="text-red-500/50" />
                 </div>
               ))}
@@ -207,23 +281,7 @@ function Dashboard() {
           </section>
         )}
 
-        {/* IPM EXPIRING TODAY */}
-        {expiringToday.length > 0 && (
-          <section className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-orange-500" />
-              <h2 className="text-sm font-bold text-orange-500 uppercase tracking-wider">IPM Locks Expiring ({expiringToday.length})</h2>
-            </div>
-            <div className="space-y-2">
-              {expiringToday.map(batch => (
-                <div key={batch.id} className="glass-card p-4 border-l-4 border-l-orange-500/50 flex items-center justify-between">
-                  <div><p className="text-sm font-medium text-orange-500">🔓 {batch.batch_code} — {getCropName(batch.crop_id)}</p><p className="text-xs text-orange-500/60 mt-0.5">Withholding period ends today</p></div>
-                  <Lock size={16} className="text-orange-500/50" />
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+
 
         {/* UPCOMING */}
         {upcomingTasks.length > 0 && (
@@ -275,30 +333,19 @@ function Dashboard() {
             <div className="space-y-2">
               {activeBatches.slice(0, 4).map(batch => {
                 const crop = crops.find(c => c.id === batch.crop_id);
-                if (!crop) return null;
-                const stage = getBatchStage(batch, crop);
-                const stageColors = { gray: 'bg-gray-500', yellow: 'bg-yellow-500', green: 'bg-green-500', blue: 'bg-blue-500', emerald: 'bg-emerald-500', red: 'bg-red-500' };
-                const stageBadge = { gray: 'bg-gray-500/15 text-gray-500', yellow: 'bg-yellow-500/15 text-yellow-600', green: 'bg-green-500/15 text-green-600', blue: 'bg-blue-500/15 text-blue-500', emerald: 'bg-emerald-500/15 text-emerald-600', red: 'bg-red-500/15 text-red-500' };
+                const daysIn = batch.start_date ? Math.floor((new Date() - new Date(batch.start_date)) / 86400000) : 0;
                 return (
-                  <div key={batch.id} className="glass-card p-4">
+                  <div key={batch.batch_id || batch.id} className="glass-card p-4">
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>{batch.batch_code}</span>
-                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{crop.common_name}</p>
+                        <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{crop?.common_name || 'Unknown'}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {batch.ipm_locked && <Lock size={14} className="text-red-500" />}
-                        <span className={`badge text-[10px] ${stageBadge[stage.color] || stageBadge.gray}`}>{stage.stage}</span>
-                      </div>
-                    </div>
-                    <div className="w-full rounded-full h-1.5" style={{ background: 'var(--color-border)' }}>
-                      <div className={`h-1.5 rounded-full transition-all duration-500 ${stageColors[stage.color] || 'bg-gray-500'}`} style={{ width: `${Math.min(stage.percent, 100)}%` }} />
+                      <span className="badge bg-amber-500/15 text-amber-600 text-[10px]">{batch.status}</span>
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{batch.growing_zone || 'No zone'}</span>
-                      <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-                        {crop.days_to_maturity - stage.daysElapsed > 0 ? `${crop.days_to_maturity - stage.daysElapsed}d to harvest` : stage.stage === 'Ready to Harvest' ? 'Ready!' : 'Past window'}
-                      </span>
+                      <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>{batch.propagation_method}</span>
+                      <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>Day {daysIn} · {batch.initial_quantity} pots started</span>
                     </div>
                   </div>
                 );
@@ -343,7 +390,7 @@ function Dashboard() {
         {lowStockItems.length > 0 && (
           <div style={{ marginTop: '30px' }}>
             <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '10px', color: '#ef4444', borderBottom: '1px solid #ef4444', paddingBottom: '4px' }}>🔴 LOW STOCK ALERTS</h2>
-            {lowStockItems.map(i => <div key={i.id} style={{ marginBottom: '6px', fontSize: '10pt' }}>• {i.name} — {i.current_qty} {i.unit} remaining</div>)}
+            {lowStockItems.map(i => <div key={i.sku_id || i.id} style={{ marginBottom: '6px', fontSize: '10pt' }}>• {i.product_name} — {i.current_stock} {i.sales_format} remaining</div>)}
           </div>
         )}
 
@@ -360,6 +407,125 @@ function Dashboard() {
             </thead>
             <tbody>
               {[1,2,3,4,5].map(i => (
+                <tr key={i}>
+                  <td style={{ border: '1px solid #ccc', padding: '8px', height: '32px' }}></td>
+                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
+                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
+                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ marginTop: '30px' }}>
+          <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '16px', borderBottom: '1px solid #ccc', paddingBottom: '4px' }}>📝 DAILY FIELD NOTES / SCOUTING</h2>
+          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
+          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
+          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
+          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
+        </div>
+
+        <p style={{ marginTop: '40px', fontSize: '8pt', color: '#999', textAlign: 'center' }}>Elgreensyde — Purok 17 Hindangon Poblacion, Valencia City, Bukidnon</p>
+      </div>
+
+      {/* AWAY MODE MODAL */}
+      {showAwayModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl overflow-hidden animate-scale-in">
+            <div className="bg-indigo-600 p-6 text-white text-center">
+              <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-3">
+                <Calendar size={32} />
+              </div>
+              <h2 className="text-xl font-display font-bold">Schedule Absence</h2>
+              <p className="text-xs text-indigo-100 mt-1">reschedule non-critical operations</p>
+            </div>
+            
+            <form onSubmit={handleCreateAway} className="p-6 space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-slate-400 ml-1">Departure Date</label>
+                <input required type="date" name="start" className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 outline-none transition-all text-sm font-medium" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-slate-400 ml-1">Return Date</label>
+                <input required type="date" name="end" className="w-full p-4 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 outline-none transition-all text-sm font-medium" />
+              </div>
+              
+              <div className="pt-2 flex flex-col gap-2">
+                <button type="submit" className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-bold text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition-all">
+                  Confirm Dates & Protect
+                </button>
+                <button type="button" onClick={() => setShowAwayModal(false)} className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING ACTION: PRINT */}
+      <button 
+        onClick={generatePDF} 
+        disabled={generatingPDF} 
+        className="fixed bottom-24 right-5 w-12 h-12 rounded-full bg-slate-800 text-white shadow-xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 no-print"
+      >
+        {generatingPDF ? <div className="loading-spinner w-5 h-5 border-2" /> : <Printer size={20} />}
+      </button>
+
+      {/* PDF RUN SHEET CONTAINER (Hidden from screen) */}
+      <div id="run-sheet-pdf" style={{ display: 'none', width: '210mm', minHeight: '297mm', padding: '15mm', backgroundColor: 'white', color: 'black', fontFamily: 'sans-serif' }}>
+        <h1 style={{ fontSize: '20pt', fontWeight: 'bold', margin: '0 0 8px 0', color: '#111' }}>🌿 Elgreensyde — Daily Run Sheet</h1>
+        <p style={{ fontSize: '12pt', marginBottom: '24px', color: '#666' }}>{formatDate()}</p>
+        
+        {overdueTasks.length + todayTasks.length === 0 ? (
+          <p style={{ fontStyle: 'italic', color: '#666', marginTop: '20px' }}>No tasks due for today. The farm is caught up!</p>
+        ) : (
+          getTasksByZone().map(([zone, zoneTasks]) => (
+            <div key={zone} style={{ marginBottom: '24px' }}>
+              <div style={{ backgroundColor: '#f0fdf4', padding: '6px 12px', borderLeft: '4px solid #16a34a', marginBottom: '12px' }}>
+                <h2 style={{ fontSize: '14pt', fontWeight: 'bold', margin: '0', color: '#166534', textTransform: 'uppercase' }}>📍 {zone}</h2>
+              </div>
+              <div style={{ paddingLeft: '8px' }}>
+                {zoneTasks.map(t => {
+                  const isOverdue = t.status === 'Overdue';
+                  return (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px', fontSize: '11pt' }}>
+                      <div style={{ border: `2px solid ${isOverdue ? '#ef4444' : '#6b7280'}`, width: '16px', height: '16px', borderRadius: '4px', marginRight: '12px', flexShrink: 0, marginTop: '2px' }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : '#111' }}>
+                          {isOverdue && '⚠️ '}{t.title}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+
+        {lowStockItems.length > 0 && (
+          <div style={{ marginTop: '30px' }}>
+            <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '10px', color: '#ef4444', borderBottom: '1px solid #ef4444', paddingBottom: '4px' }}>🔴 LOW STOCK ALERTS</h2>
+            {lowStockItems.map(i => <div key={i.sku_id || i.id} style={{ marginBottom: '6px', fontSize: '10pt' }}>• {i.product_name} — {i.current_stock} {i.sales_format} remaining</div>)}
+          </div>
+        )}
+
+        {/* EC/pH Checks Table */}
+        <div style={{ marginTop: '30px' }}>
+          <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '4px' }}>📋 EC / pH SPOT CHECKS</h2>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10pt', marginTop: '10px' }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'left', width: '30%' }}>Zone / Batch</th>
+                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center', width: '20%' }}>EC (mS/cm)</th>
+                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center', width: '20%' }}>pH</th>
+                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'left', width: '30%' }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1, 2, 3, 4, 5].map(i => (
                 <tr key={i}>
                   <td style={{ border: '1px solid #ccc', padding: '8px', height: '32px' }}></td>
                   <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>

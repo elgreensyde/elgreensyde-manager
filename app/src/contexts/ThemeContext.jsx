@@ -4,7 +4,8 @@ const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('elgreensyde_theme') || 'dark';
+    localStorage.setItem('elgreensyde_theme', 'light');
+    return 'light';
   });
 
   useEffect(() => {

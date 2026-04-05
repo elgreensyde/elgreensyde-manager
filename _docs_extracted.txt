@@ -1,0 +1,3343 @@
+===== DOC1: SYSTEM DESIGN =====
+ELGREENSYDE
+Farm Management System
+DOCUMENT 1 OF 2 — SYSTEM DESIGN FOR DEVELOPERS
+Prepared for: Antigravity & Codex AI-Assisted Development
+Valencia City, Bukidnon, Philippines | April 2026
+1. Application Overview & Technology Stack
+Property
+Value
+Application Type
+React Single Page Application
+Build Tool
+Vite
+Styling
+TailwindCSS
+Database / Backend
+Supabase (PostgreSQL)
+Typography
+Plus Jakarta Sans, Fredoka, Courier Prime
+Design Theme
+Light and Cute Aesthetics
+Weather API
+Open-Meteo (Free, no API key required)
+Weather Coordinates
+Lat: 7.9059, Lon: 125.0936 (Valencia City, Bukidnon)
+Receipt Export
+html2canvas — PNG snapshot of thermal receipt
+Notifications
+Browser Push Notifications + Supabase Email (free tier)
+Document Reference
+See Document 2 of 2 for Crop Library and Recommendation Database
+Document Map
+Document
+Contents
+Audience
+Document 1 (This Document)
+System architecture, all module specs, database schema, business logic, API integrations, UI specifications, development phases
+Developers — Antigravity and Codex
+Document 2
+Crop Library records for all 20 crops, checklist questions, recommendation database, inputs inventory, soil mix specs, fertilizer schedules
+Farm operator reference and developer data seeding
+2. Module Overview
+#
+Module
+Type
+Core Function
+1
+Cultivation Pipelines
+Core
+Three-tiered pipeline: Trays, Plot-to-Gram, Batch-to-Unit
+2
+Point of Sale Engine
+Core
+Desktop-grade POS with receipt PNG export
+3
+Live Inventory
+Core
+Real-time stock aggregator deducting on fulfillment
+4
+Unified Maintenance Log
+Core
+Multi-target fertilizer and IPM logging
+5
+Zero-Friction Accounting
+Core
+Passive ledger with P&L tracking
+6
+Customer Database
+Core
+Buyer profiles linked to order history
+7
+Pricing Table
+Core
+Centralized retail and wholesale pricing
+8
+Crop Library
+Intelligence
+20-crop agronomic database driving all recommendations
+9
+Monitoring and Recommendation
+Intelligence
+Farm Walk checklists with database-driven recommendations
+10
+Smart Lifecycle Scheduler
+Intelligence
+Cascading timeline from sow date to plot clearance
+11
+Farm Calendar
+Intelligence
+Weather-aware task scheduling with drag and drop
+12
+Harvest Safety Assessment
+Intelligence
+Triggered checklist before harvest when issue detected
+13
+Inputs Inventory
+Intelligence
+Farm supply stock tracker linked to recommendation engine
+14
+Weather Integration
+Integration
+Open-Meteo free API for scheduling and alerts
+15
+Away Mode and Notifications
+Operations
+Away period management with critical alert push and email
+3. Cultivation Pipelines
+The system employs a Three-Tiered Pipeline to accommodate all crop formats at Elgreensyde. Every crop lifecycle begins in a Tray and graduates to either a Plot (gram-based) or Batch (unit-based) depending on how it is sold.
+3.1 Tier 1 — Seed and Germination (Trays)
+Tracks propagation trays from sowing through to transplant readiness. Applies to both seed-sown and cutting-based propagation.
+Field
+Type
+Description
+tray_id
+VARCHAR
+Auto-generated random code e.g. TRAY-7X4K
+crop_id
+FK → crop_library
+Links to Crop Library record
+variety
+VARCHAR
+Specific variety e.g. Sweet Basil
+establishment_method
+ENUM
+Seeds or Cuttings — drives checklist branching
+sowing_date
+DATE
+Day seeds dropped or cuttings inserted
+growing_medium
+VARCHAR
+Soil plugs, rockwool, CRH mix
+initial_quantity
+INTEGER
+Number of seeds or cuttings started
+germination_rate
+DECIMAL
+Percentage confirmed germinated
+target_transplant_date
+DATE
+Auto-calculated: sowing_date + avg_nursery_days from Crop Library
+actual_transplant_date
+DATE
+Set when tray is graduated
+status
+ENUM
+Sown, Germinated, Ready, Transplanted, Archived
+destination_id
+FK → plots or batches
+Set at transplant — links tray to its destination
+notes
+TEXT
+Open field for observations
+Automation: When status changes to Transplanted, the system executes the Data Handoff — archives the tray, activates the destination plot or batch, and copies crop type and sowing date to preserve the full lifecycle chain.
+3.2 Tier 2 — Plot-to-Gram Pipeline (Raised Bed Crops)
+Tracks physical growing beds producing cut-weight yields. Used for basil varieties, parsley, pechay, pakchoi, and mustasa.
+Field
+Type
+Description
+plot_id
+VARCHAR
+Auto-generated random code e.g. BED-1342
+crop_id
+FK → crop_library
+Links to Crop Library
+variety
+VARCHAR
+Specific variety
+width_m
+DECIMAL
+Bed width in meters — typically 1m
+length_m
+DECIMAL
+Bed length in meters — 2m to 5m+
+area_sqm
+DECIMAL
+Auto-calculated: width x length
+mound_height_cm
+INTEGER
+Mound height above ground level
+establishment_method
+ENUM
+Seeds or Cuttings
+sow_date
+DATE
+Original sow date from tray or direct sow
+transplant_date
+DATE
+Date moved from tray to plot
+status
+ENUM
+Under Construction, Ready to Plant, Active, Ready to Clear, Cleared, Resting
+previous_crop_id
+FK → crop_library
+For rotation validation
+resting_since
+DATE
+Date plot was cleared
+amendments_applied
+JSONB
+Lime and CRH application dates and rates during rest
+location_description
+TEXT
+Free text physical location e.g. near the fence row 2
+Harvest Logs sub-table links to plot_id and records date, gross weight, cull weight, sellable weight, and links to harvest_safety_assessment_id.
+Plot Status
+Meaning
+App Behavior
+Under Construction
+Bed being built
+Visible on map, no checklist, no tasks
+Ready to Plant
+Empty bed ready for crop
+Appears in transplant destination dropdown
+Active
+Currently growing
+Daily and weekly monitoring active, harvest tasks generated
+Ready to Clear
+Crop spent
+Clearance task auto-generated
+Cleared / Resting
+Empty, amendments applied
+Amendment tasks generated, countdown to replant date
+Blocked
+Rotation conflict or disease quarantine
+Cannot be assigned new crop until resolved
+3.3 Tier 3 — Batch-to-Unit Pipeline (Potted Crops)
+Tracks potted herb batches sold as individual units. Used for all potted herbs and edible flowers.
+Field
+Type
+Description
+batch_id
+VARCHAR
+Auto-generated random code e.g. BCH-MNT-04
+crop_id
+FK → crop_library
+Links to Crop Library
+variety
+VARCHAR
+Specific variety
+propagation_method
+ENUM
+Kratky, Soil Cuttings, Seeds
+start_date
+DATE
+Sowing or cutting insertion date
+initial_quantity
+INTEGER
+Number of pots started
+mortality_count
+INTEGER
+Pots lost — logged manually
+market_ready_quantity
+INTEGER
+Auto-calculated: initial minus mortality
+input_cost
+DECIMAL
+Total cost of soil, pots, cuttings for this batch in PHP
+status
+ENUM
+Nursery, Market Ready, Sold Out, Archived
+days_to_maturity
+INTEGER
+From Crop Library — triggers maturity alert when exceeded
+Watch List: Individual pots that are flagged during monitoring get a Pot ID, herb type, issue flagged, date flagged, daily status (Improving / Same / Worsening), and resolution outcome.
+4. Point of Sale Engine
+Desktop-grade POS interface for walk-in and tracked customer sales. Optimized for tablet or laptop use.
+4.1 Interface Layout
+Left column — Catalog: Grid of clickable product buttons filtered by Units or Grams format. Search-filtered grid with category tabs.
+Right column — Cart and Checkout: Running itemized list, discount controls, tender entry, change calculation, and Checkout button.
+4.2 Transaction Flow
+Stage
+Action
+Stock Effect
+Pending
+Items added to cart, customer being served
+Stock reserved — not yet deducted
+Confirmed
+Items and total verified with customer before payment
+Checkpoint — no deduction yet
+Fulfilled
+Payment received, receipt generated
+Stock deducted, ledger Revenue entry written
+4.3 Dynamic Pricing
+Retail price loaded from Pricing Table based on SKU
+Wholesale price auto-applied when Customer Type is Wholesale
+Admin can override price on any single line item via Set Price modal
+Supports flat PHP Off deductions and percentage Off scaling
+4.4 Receipt Engine
+On Fulfilled: POS switches to Receipt View — styled HTML div formatted as 58mm or 80mm thermal receipt
+html2canvas reads the receipt div and renders it to an invisible HTML5 canvas
+Canvas converts to base64 PNG data URL and triggers automatic file download
+Receipt includes: Farm name, date and time, order number, line items, discounts, total, cash tendered, change
+4.5 Gram-Based Product Handling
+When a gram-format product is added to cart, a weight entry modal fires. User enters weight in grams. System calculates price as weight multiplied by price per gram. Deduction from inventory is exact gram amount entered.
+5. Live Inventory
+Field
+Type
+Description
+sku_id
+VARCHAR
+Unique product identifier e.g. SKU-BSL-BLK
+product_name
+VARCHAR
+Customer-facing name e.g. Sweet Basil Bulk
+crop_id
+FK → crop_library
+Links to source crop
+sales_format
+ENUM
+Grams or Units
+current_stock
+DECIMAL
+Live available quantity — auto-updated
+restock_alert_level
+DECIMAL
+Threshold triggering low-stock task
+pricing_id
+FK → pricing
+Links to active price record
+Stock additions: Harvest Log on plot adds grams to SKU. Move to Inventory on batch adds units to SKU. Stock deductions: POS Fulfilled event deducts exact quantity. Deduction fires at Fulfilled stage only — never at Pending or Confirmed.
+6. Unified Maintenance Log
+Single table recording every farm intervention — fertilizer drenches, pest sprays, scouting events. Links to plots and batches. Drives the Task and Alert System and the Recommendation Engine.
+Field
+Type
+Description
+log_id
+VARCHAR
+Unique event identifier e.g. LOG-1042
+target_ids
+JSONB
+Array of plot_ids or batch_ids — supports multi-target batching
+event_date
+DATE
+When the action was performed
+action_category
+ENUM
+Fertilize, Pest Treatment, Disease Treatment, Scouting, Preventive
+product_id
+FK → inputs_inventory
+Links to product used — triggers stock deduction
+method
+VARCHAR
+Drench, Foliar Spray, Soil Application
+dosage_rate
+VARCHAR
+e.g. 5g per liter, 5ml per liter
+volume_applied
+DECIMAL
+Total volume mixed and applied in liters
+notes
+TEXT
+Open observations field
+checklist_triggered
+BOOLEAN
+Whether this log was generated from a triggered checklist
+Multi-Plot Batching: User selects multiple targets simultaneously from a checklist and logs one treatment record that applies to all selected targets. The system creates individual log entries per target linked to the same batch event.
+Inputs Deduction: When a log is saved, the system calculates total product used (dosage rate multiplied by volume applied) and deducts from the corresponding inputs_inventory record.
+7. Zero-Friction Accounting
+7.1 Cash P&L Panel — Real Money Only
+Ledger Type
+Source
+Effect
+Revenue
+Auto-generated from POS Fulfilled events
+Increases net position
+Direct Expenses
+Manually entered — seeds, pots, soil, utilities
+Decreases net position
+Net Cash Position
+Revenue minus Expenses — running total
+Dashboard KPI
+7.2 Efficiency Metrics Panel — Non-Cash
+Clearly labeled as non-cash performance indicators. Includes tooltip: These figures do not affect your cash balance.
+Metric
+Source
+Batch Mortality Rate
+Initial Qty vs Market-Ready Qty per batch
+Potential Revenue Lost — Pots
+Dead pots multiplied by retail price
+Cull Weight per Plot Harvest
+Discarded weight logged at each harvest
+Potential Revenue Lost — Grams
+Cull weight multiplied by price per gram
+7.3 True Margin Per Batch
+Gross Revenue: Market-Ready Qty multiplied by Retail Price
+Direct Costs: Input cost logged at batch creation
+Net Profit: Gross Revenue minus Direct Costs
+Wastage Value: Dead pots multiplied by Retail Price — shown in Efficiency panel only
+8. Customer Database and Pricing Table
+8.1 Customer Database
+Field
+Type
+Description
+customer_id
+VARCHAR
+Unique identifier e.g. CUST-001
+name
+VARCHAR
+Person or business name
+contact_number
+VARCHAR
+Phone, Viber, WhatsApp
+address
+TEXT
+For delivery orders
+type
+ENUM
+Wholesale, Walk-in, Online
+notes
+TEXT
+Preferences, delivery instructions, patterns
+Walk-in fallback: All anonymous walk-in POS transactions point to CUST-WALKIN record. Order history per client accessible from customer profile.
+8.2 Pricing Table
+Field
+Type
+Description
+pricing_id
+VARCHAR
+Unique identifier
+sku_id
+FK → inventory
+Links to product
+retail_price
+DECIMAL
+Walk-in and online price in PHP
+wholesale_price
+DECIMAL
+Auto-applied for Wholesale customer type
+minimum_order
+DECIMAL
+Smallest quantity accepted in grams or units
+9. Crop Library
+The Crop Library is the intelligence engine driving all monitoring, scheduling, bed setup, and recommendation functions. Every crop registered here makes its data available across all other modules automatically.
+Field
+Type
+Description
+crop_id
+VARCHAR
+Unique identifier e.g. CRP-BSL-SW
+crop_name
+VARCHAR
+Common name e.g. Sweet Basil
+scientific_name
+VARCHAR
+e.g. Ocimum basilicum
+family
+VARCHAR
+Plant family e.g. Lamiaceae
+varieties
+JSONB
+Array of sub-varieties
+growth_type
+ENUM
+Cut and come again, Single harvest, Perennial, Annual
+format
+ENUM
+Bulk grams, Units (pots), Both
+stages
+JSONB
+Stage names and day durations from Crop Library data
+avg_nursery_days
+INTEGER
+Days in tray before transplant ready
+days_to_first_harvest
+INTEGER
+Days from transplant to first harvest
+harvest_interval_days
+INTEGER
+Days between cuts for cut-and-come-again
+plot_lifespan_days
+INTEGER
+Expected productive life before clearing
+resting_days
+INTEGER
+Minimum rest days between crop cycles
+spacing_cm
+VARCHAR
+e.g. 25x30cm between plants and rows
+plants_per_sqm
+DECIMAL
+Calculated from spacing
+min_bed_depth_cm
+INTEGER
+Minimum bed depth in cm
+mound_height_cm
+INTEGER
+Recommended mound height for semi-clay soil
+pot_diameter_cm
+INTEGER
+Minimum pot diameter for potted crops
+pot_depth_cm
+INTEGER
+Minimum pot depth for potted crops
+pot_material
+VARCHAR
+e.g. Terracotta, HDPE
+soil_mix
+JSONB
+Volumetric ratios of soil components — varies per crop group
+cow_manure_excluded
+BOOLEAN
+TRUE for Rosemary, Thyme, French Tarragon
+fertilizer_schedule
+JSONB
+Stage-based fertilizer rates and timing
+weather_thresholds
+JSONB
+Per-crop overrides for scheduling weather limits
+rotation_family
+VARCHAR
+Plant family for rotation planning
+avoid_after
+JSONB
+Crop families to avoid planting after
+recommended_after
+JSONB
+Crop families recommended as successors
+pest_records
+JSONB
+Array of linked pest record IDs
+disease_records
+JSONB
+Array of linked disease record IDs
+nutrient_records
+JSONB
+Array of linked nutrient deficiency record IDs
+checklist_questions
+JSONB
+Stage-specific checklist questions
+harvest_indicators
+TEXT
+Visual and physical readiness indicators
+harvest_method
+TEXT
+Recommended cutting technique
+yield_per_sqm
+VARCHAR
+Expected yield range for raised bed crops
+yield_per_pot
+VARCHAR
+Expected yield range for potted crops
+postharvest_notes
+TEXT
+Handling and storage for market quality
+edible_parts
+TEXT
+For edible flowers — which parts are safe to consume
+pesticide_free_required
+BOOLEAN
+TRUE for edible flowers
+high_risk_flag
+VARCHAR
+e.g. French Tarragon — 100% mortality risk in rainy season without cover
+New crop registration: User fills Add New Crop form. System creates draft record. User populates fields manually or via CSV import. Draft status until confirmed — does not affect other modules until activated.
+CSV Import Template: Pre-formatted spreadsheet matching all crop_library column headers. Download from system, fill from Gemini research, upload to bulk-import multiple crops at once.
+10. Monitoring and Recommendation System
+Database-driven farm monitoring system. No AI API — all recommendations come from pre-written records matched to checklist answers. Works offline after initial load.
+10.1 Farm Walk Session Structure
+Session Type
+Scope
+Checklist Type
+Output
+Daily Scan
+All active trays and beds — 5 questions each
+Short universal daily check
+Flags and alerts, triggered check prompts
+Weekly Full Check
+Selected trays and beds — full 5-section checklist
+Crop-aware full checklist
+Complete recommendation report
+Triggered Check
+Single tray or bed — relevant section only
+Specific flagged section
+Targeted recommendation
+10.2 Daily Scan Questions — Universal
+1. Overall appearance — any sudden or noticeable change since yesterday? Yes or No
+2. Soil or medium moisture? Too wet, Good, or Too dry
+3. Any visible pest activity or new damage? Yes or No
+4. Any collapsed, wilting, or dead plants? Yes or No
+5. Anything unusual worth noting? Free text optional
+If any answer triggers a flag: Do you want to do a full check now or schedule it for the weekly check?
+10.3 Nursery Session
+Environmental flags asked ONCE for the whole nursery area — not repeated per tray
+Individual tray checks follow with shorter questions since environmental context is already captured
+Cross-tray pattern detection: same symptom across 3 or more trays in one session escalates to nursery-wide alert
+10.4 Recommendation Database Structure
+Field
+Description
+record_id
+Unique identifier e.g. REC-001
+crop_id
+Which crop this record applies to
+variety
+Specific variety if threshold differs
+growth_stage
+Seedling, Vegetative, Mature, or All
+check_type
+Daily, Weekly, Triggered, or Preventive
+trigger_type
+Nutrient, Pest, Disease, or Environmental
+trigger_conditions
+AND or OR logic matching checklist answer combinations
+severity_level
+Low, Medium, High, or Critical
+issue_name
+e.g. Nitrogen Deficiency, Downy Mildew Stage 1
+cause_explanation
+Detailed text — what is happening and why at this stage
+action_steps
+Numbered detailed steps — what to apply, how much, how
+follow_up_schedule
+Day 3, Day 7, Day 14 check instructions
+withholding_check
+Boolean — cross-check against harvest date before displaying
+product_reference
+Links to inputs_inventory records
+variety_flag
+Variety-specific dosage or timing notes e.g. Lemon Basil reduce rate 30%
+10.5 Recommendation Query Logic
+When a checklist is submitted the system runs:
+Step 1 — Filter by crop_id and variety
+Step 2 — Filter by current growth_stage
+Step 3 — Match trigger_conditions against checklist answers using AND or OR logic
+Step 4 — Rank matched records by severity_level — Critical first
+Step 5 — Run withholding cross-check against estimated harvest date
+Step 6 — Run inputs availability check against inputs_inventory
+Step 7 — Run cross-bed pattern detection against recent submissions
+Step 8 — Display recommendation with all adjustments applied
+10.6 Multiple Issues Handling
+When multiple records match simultaneously the system displays a combined recommendation screen listing all issues in severity order with sequencing guidance: Address issues in severity order. Treating nutrient deficiency while disease is active is ineffective.
+10.7 Preventive Alert Triggers — Auto-Generated Without Checklist
+Condition
+Auto-Generated Alert
+Priority
+Rainy season active + last potassium bicarbonate 7 or more days ago
+Downy mildew preventive spray due
+Medium
+Days since last urea = 7 days on Active plots
+Weekly fertilizer due — vegetative stage
+Medium
+Plot not harvested in 14 or more days
+Check for bolting — schedule harvest
+High
+Seedling stage day 14 or more, no rooting confirmed
+Tug test due — check cutting establishment
+High
+Batch nursery days exceeded days_to_maturity
+Check market readiness
+High
+SKU below restock_alert_level
+Low stock alert — restock needed
+Low
+Plot status Ready to Clear for 3 or more days
+Clear spent crop and update status
+Low
+11. Smart Lifecycle Scheduler
+Cascading timeline system that automatically calculates every downstream date from the sowing date. Any date change triggers a full recalculation of all subsequent dates and updates the task queue in real time.
+11.1 Timeline Chain
+Event
+Source
+Next Calculated Date
+Sow Date
+User entry or tray record
+Germination Ready = Sow Date + avg_germination_days
+Germination Confirmed
+Daily check flag
+Transplant Ready = Germination + avg_nursery_days
+Transplant Date
+Actual transplant action
+First Harvest = Transplant + days_to_first_harvest
+First Harvest
+Actual harvest log
+Next Harvest = Harvest Date + harvest_interval_days
+Each Subsequent Harvest
+Each harvest log
+Next Harvest = Last Harvest + harvest_interval_days
+Ready to Clear
+Auto from plot_lifespan_days
+Resting Ends = Clear Date + resting_days
+Resting Ends
+Auto countdown
+Plot available for new crop assignment
+Cascade Rule: If any date in the chain is delayed — by weather, workload, or manual adjustment — every subsequent date shifts forward by the same number of days. The entire task queue updates automatically.
+11.2 Scheduling Decision Chain
+Before assigning any task to a date the system checks five conditions in order:
+Step 1 — Is the day available? Sunday blocked. Away Period blocked. 5-task daily limit reached — move to next day.
+Step 2 — Is the weather suitable? Pull Open-Meteo 7-day forecast. Apply crop-specific or universal weather thresholds.
+Step 3 — Is the crop ready? Check timeline chain dates against today.
+Step 4 — Are there conflicts? Transplanting and heavy harvesting same day — spread. Fertilizing before forecast rain — move. Spraying on windy day — move.
+Step 5 — Assign to earliest passing day and add to task queue.
+11.3 Universal Weather Thresholds — Developer Defaults
+Condition
+Default Threshold
+Action
+Rainfall probability
+Above 70%
+Flag transplanting and sowing as unsuitable
+Temperature
+Above 32 degrees C
+Flag transplanting seedlings as unsuitable
+Humidity
+Above 85%
+Warn before harvest — disease risk elevated
+Wind speed
+Above 30 km/h
+Flag foliar spraying as unsuitable
+Per-crop overrides: weather_thresholds field in crop_library stores JSON overrides. Example: Pechay rainfall threshold raised to 85% since brassicas tolerate rain better than basil at 70%.
+11.4 Unsuitable Condition Options
+When a scheduled date fails the weather or conflict check the system presents three options:
+Option
+Label
+Action
+A
+Proceed Anyway
+Override — system logs condition warning against the task record
+B
+Alternative Action
+For sowing: start in nursery trays instead of direct to bed. For transplanting: delay to next suitable day. For spraying: apply at soil level only.
+C
+Reschedule
+System finds next suitable day in 14-day forecast window and proposes it
+12. Harvest Safety Assessment
+Runs automatically before any harvest is logged on a plot or batch. Triggered by flags from daily or weekly monitoring, or by system-detected conditions.
+12.1 Pre-Harvest Check Sequence
+Step 1 — Withholding period check: Last treatment date + product withholding days vs today. If today is within withholding period — harvest blocked with explanation.
+Step 2 — Disease status check: Any open disease flags on this plot from last checklist? If yes — triggered checklist required before proceeding.
+Step 3 — Pest status check: Any open pest flags? Severity determines response — mild triggers checklist, severe blocks harvest.
+Step 4 — Plant health check: Any collapsed or dead plant flags? Partial harvest option presented.
+Step 5 — Weather check: Current humidity above 85%? Warning displayed — foliar disease spread risk elevated post-harvest.
+12.2 Harvest Outcomes
+Outcome
+Condition
+System Response
+Safe to Harvest
+All checks pass
+Harvest proceeds — log form opens
+Harvest with Caution
+Mild issue present — not severe
+Three options presented: Harvest Anyway, Partial Harvest, Postpone and Reschedule
+Harvest Blocked
+Within withholding period or severe disease or pest
+Block with explanation — treatment task auto-generated
+12.3 Three Caution Options
+Option
+Action
+System Records
+Harvest Anyway
+User overrides — proceeds with full harvest
+Warning note logged against harvest record
+Partial Harvest
+User harvests unaffected portions only
+System asks which sections skipped and why — cull weight logged
+Postpone and Reschedule
+System finds next suitable harvest window
+Checks withholding period, recovery time, weather forecast, and task load
+12.4 Edible Flower Safety Escalation
+For edible flower crops (Sweet William, French Marigold, Torenia, Blue Ternate, Globe Amaranth) the harvest safety assessment has additional mandatory checks:
+Any Botrytis spotting on blooms — harvest of affected blooms blocked, immediate removal and destroy task generated
+Any pesticide application on blooms — bloom harvest blocked, pesticide-free zone violation flag raised
+Last neem oil application within 3 days — harvest blocked, 3-day withholding enforced
+13. Farm Calendar
+13.1 Week View Layout
+7-day horizontal view — Monday to Saturday visible, Sunday blocked and grayed out
+Weather strip above each day — Open-Meteo icon, temperature, and rainfall probability
+Up to 5 task slots per day — overflow badge in red if exceeded
+Color-coded tasks: Green = Harvest, Blue = Transplant or Sow, Yellow = Fertilize, Orange = Pest or Disease Treatment, Gray = General maintenance
+Away Period days — gray overlay, no tasks, label shows Away
+Drag and drop — move any task to another available day manually
+13.2 Task Auto-Spread Logic
+System distributes tasks across the week respecting Sunday block, Away Periods, and 5-task daily limit
+Earliest suitable day preferred — not random distribution
+Conflicting task types on same day auto-separated across adjacent days
+User can manually adjust any task after auto-spread
+13.3 Away Mode
+Setting
+Description
+Away Period
+Start date and end date — manually set per month
+Recurring Pattern
+e.g. Monday to Friday away this month — set once, applies to all weeks in range
+Task Suspension
+All auto-generated tasks suspended during away period
+Critical Alert Override
+Disease outbreaks, severe pest pressure, severely overdue harvests still fire even during away period
+Rescheduling
+All tasks falling within away period auto-rescheduled to first available day after return
+13.4 Return Summary Screen
+Displays on first app load after away period ends:
+Days away count
+Critical alerts fired during absence — highlighted red
+Plots overdue for harvest — highlighted orange
+Batches that exceeded maturity during absence
+Rescheduled task queue for next 7 days — auto-spread and ready to confirm or manually adjust
+One-tap confirm to accept rescheduled queue
+14. Inputs Inventory
+Tracks physical stock of farm treatment and fertilizer supplies. Linked to Maintenance Log for automatic deduction on use. Linked to Recommendation Engine to filter suggestions to available products only.
+Field
+Type
+Description
+input_id
+VARCHAR
+Unique identifier
+product_name
+VARCHAR
+e.g. Neem Oil, Potassium Bicarbonate
+type
+ENUM
+Organic Pesticide, Fungicide, Fertilizer, Soil Amendment
+active_ingredient
+VARCHAR
+For withholding period matching
+mix_rate
+VARCHAR
+Standard mix rate e.g. 5ml per 1 liter
+current_stock
+DECIMAL
+Remaining quantity in ml or grams
+stock_unit
+ENUM
+ml, grams, liters, kg
+low_stock_threshold
+DECIMAL
+Triggers restock alert task
+withholding_days
+INTEGER
+Days before harvest that application must cease
+notes
+TEXT
+Any usage notes or precautions
+14.1 Confirmed Product Records
+Product
+Type
+Mix Rate
+Withholding
+Neem Oil
+Organic Pesticide
+5ml per 1 liter water — combined with insecticidal soap
+3 days — flavor alteration risk on edible foliage
+Potassium Bicarbonate
+Fungicide / Preventive
+4g (1 tsp) per 1 liter water
+0 days — safe to harvest day of application
+Insecticidal Soap
+Organic Pesticide
+5ml per 1 liter water — combined with neem oil
+3 days
+Urea (46-0-0)
+Fertilizer
+5g per 1 liter water (2.5g rainy season)
+0 days — rinse harvested leaves
+Complete Fertilizer (14-14-14)
+Fertilizer
+1 cup per 16 liters water
+0 days — rinse harvested leaves
+When a Maintenance Log entry is saved, the system calculates total product consumed (dosage rate multiplied by volume applied in liters) and deducts from current_stock. When stock drops below low_stock_threshold a restock task is auto-generated in the Task Queue.
+15. Weather Integration — Open-Meteo
+15.1 API Configuration
+Setting
+Value
+API Provider
+Open-Meteo
+Cost
+Completely free — no API key, no registration, no credit card
+Rate Limits
+No call limits
+Farm Coordinates
+Latitude 7.9059, Longitude 125.0936
+Location
+Valencia City, Bukidnon, Philippines
+Forecast Window
+7-day hourly and daily forecast
+Update Frequency
+On app load and every 6 hours
+15.2 Data Points Used
+Data Point
+Used For
+Rainfall probability (%)
+Transplant, sow, and harvest scheduling
+Temperature (degrees C)
+Transplant suitability, heat stress alerts
+Relative humidity (%)
+Disease risk warnings, harvest safety
+Wind speed (km/h)
+Foliar spray scheduling
+Weather description
+Calendar day icon display
+Precipitation amount (mm)
+Rainy season detection for preventive alerts
+15.3 Sample API Call
+https://api.open-meteo.com/v1/forecast
+  ?latitude=7.9059
+  &longitude=125.0936
+  &daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min,windspeed_10m_max
+  &hourly=relativehumidity_2m,precipitation_probability
+  &timezone=Asia%2FManila
+  &forecast_days=7
+16. Away Mode and Notifications
+16.1 Notification Channels
+Channel
+Method
+Used For
+Browser Push Notifications
+Web Push API — no app store required
+Critical alerts during away period, urgent task reminders
+Email
+Supabase built-in email function (free tier)
+Daily digest, low stock alerts, rescheduled task summaries
+16.2 Alert Priority Matrix
+Alert Type
+Urgency
+Push
+Email
+Disease outbreak detected
+Critical
+Yes — immediate
+Yes — immediate
+Severe pest pressure across 3 or more beds
+Critical
+Yes — immediate
+Yes — immediate
+Harvest overdue 3 or more days
+High
+Yes
+No
+Batch exceeded maturity 5 or more days
+High
+Yes
+No
+Withholding period violation attempted
+High
+Yes
+No
+Low inventory below restock threshold
+Medium
+No
+Yes — daily digest
+Tasks rescheduled due to weather
+Low
+No
+Yes — daily digest
+17. Complete Database Schema
+All tables use PostgreSQL via Supabase. Foreign keys enforce referential integrity across the full pipeline.
+Table
+Primary Key
+Key Foreign Keys
+Purpose
+crop_library
+crop_id
+—
+Master crop reference driving all modules
+plots
+plot_id
+crop_id, previous_crop_id
+Physical raised bed registry
+batches
+batch_id
+crop_id
+Potted crop batch registry
+trays
+tray_id
+crop_id, destination_id
+Propagation tray tracking
+harvest_logs
+log_id
+plot_id, assessment_id
+Per-harvest records with cull weight
+maintenance_logs
+log_id
+plot_id or batch_id, input_id
+Fertilizer and pest records
+monitoring_sessions
+session_id
+—
+Farm Walk session container
+checklist_responses
+response_id
+session_id, plot_id or tray_id
+Individual checklist answers
+recommendation_records
+record_id
+crop_id, input_id
+Pre-written diagnosis and action plans
+flagged_issues
+flag_id
+plot_id or tray_id, record_id
+Open issues awaiting resolution
+inventory
+sku_id
+crop_id, pricing_id
+Live stock levels
+pricing
+pricing_id
+sku_id
+Retail and wholesale price records
+customers
+customer_id
+—
+Buyer profiles
+orders
+order_id
+customer_id
+Wholesale and delivery orders
+order_line_items
+line_item_id
+order_id, sku_id
+Per-product rows in an order
+pos_transactions
+transaction_id
+customer_id
+POS sales records
+financial_ledger
+ledger_id
+transaction_id or order_id
+Cash P&L entries
+inputs_inventory
+input_id
+—
+Farm supply stock tracker
+tasks
+task_id
+plot_id or batch_id or tray_id
+Task queue — auto and manual
+away_periods
+period_id
+—
+Away period date ranges
+weather_cache
+cache_id
+—
+Cached Open-Meteo response — refreshed every 6 hours
+planting_targets
+target_id
+sku_id
+Weekly output targets for calendar planning
+pot_watch_list
+watch_id
+batch_id
+Individual flagged pot tracking
+18. Development Phases
+Phase
+Focus
+Key Deliverables
+Phase 1
+Database and Schema
+Set up all Supabase tables, foreign keys, and seed data
+All 23 tables created. Crop Library seeded with 20 crops from Document 2. Inputs inventory seeded with 5 confirmed products. Recommendation records seeded from Document 2.
+Phase 2
+Core Business Logic
+Write all calculation functions and trigger chains
+Cascade timeline recalculation. Harvest-to-inventory pipeline. Batch transfer logic. POS Pending to Confirmed to Fulfilled flow. Maintenance log inputs deduction. Mortality rate calculation. True margin per batch.
+Phase 3
+Weather and Scheduling
+Open-Meteo integration and scheduling engine
+API call and 6-hour cache. 5-condition scheduling decision chain. Auto-spread task queue. Away period suspension and rescheduling. Cascade delay propagation.
+Phase 4
+Monitoring System
+Checklist engine and recommendation query
+Farm Walk session flow. Crop-aware checklist rendering from Crop Library. Recommendation record matching logic. Cross-bed pattern detection. Harvest safety assessment flow.
+Phase 5
+Frontend and UI
+All user-facing interfaces
+Dashboard with daily task queue and weather strip. Farm Calendar week view with drag and drop. POS split-screen interface. Farm Walk mobile-optimized checklist. Nursery Kanban board. Finance dual-panel dashboard. Return Summary screen. Receipt PNG export.
+Phase 6
+Notifications
+Push and email alert system
+Browser push notification setup. Supabase email integration. Away mode alert routing. Return Summary generation.
+19. Revision Log
+Version
+Change
+Rationale
+v1.0 to v2.0
+Added Customer Database with CUST-WALKIN fallback
+Order history tracking and repeat buyer patterns
+v1.0 to v2.0
+Finance dashboard split into Cash P&L and Efficiency Metrics
+Prevents confusion between real cash and potential loss figures
+v1.0 to v2.0
+POS flow revised to Pending, Confirmed, Fulfilled
+Verification checkpoint before stock deduction
+v1.0 to v2.0
+Pricing Table module added
+Centralized pricing with auto-applied wholesale rates
+v1.0 to v2.0
+Task and Alert System formalized
+Daily task queue for solo operator
+v1.0 to v2.0
+Input Cost Tracking per batch added
+True margin calculation per herb variety
+v1.0 to v2.0
+Planting Calendar added
+Predictive planning for wholesale supply consistency
+v2.0 to v3.0
+Smart Lifecycle Scheduler added
+Cascading timeline from sow date to clearance
+v2.0 to v3.0
+Farm Calendar with weather integration added
+Open-Meteo free API for scheduling
+v2.0 to v3.0
+Harvest Safety Assessment module added
+Triggered checklist before harvest when issue detected
+v2.0 to v3.0
+Monitoring and Recommendation System added
+Database-driven checklists — no AI API required
+v2.0 to v3.0
+Crop Library expanded to full agronomic database
+Drives all modules — 20 crops with Bukidnon-specific data
+v2.0 to v3.0
+Inputs Inventory added
+Farm supply tracking linked to recommendation engine
+v2.0 to v3.0
+Away Mode and Notifications added
+Solo operator support for away periods
+v2.0 to v3.0
+Universal Crop Library architecture adopted
+New crops added without rebuilding any module
+v2.0 to v3.0
+Bed Setup Assistant added
+Auto-calculates depth, spacing, seedlings, and resting protocol
+v2.0 to v3.0
+Pot Watch List added
+Individual pot flagging for potted crop monitoring
+
+===== DOC2: CROP LIBRARY =====
+ELGREENSYDE
+Farm Management System
+DOCUMENT 2 OF 2 — CROP LIBRARY & RECOMMENDATION DATABASE
+Valencia City, Bukidnon, Philippines | April 2026
+Research Source: Gemini Deep Research — Bukidnon Highland Specific Data
+1. Document Overview
+This document is the operational intelligence reference for the Elgreensyde Farm Management System. It contains all 20 crop records, checklist frameworks, recommendation database records, inputs inventory, and soil mix specifications. Developers use this document to seed the database on first deployment.
+Section
+Contents
+Section 1
+Document overview and how to use this reference
+Section 2
+Farm context — Valencia City Bukidnon growing conditions
+Section 3
+Inputs inventory — confirmed products and mix rates
+Section 4
+Soil mix specifications per crop group
+Section 5
+Crop Library — all 20 crop records
+Section 6
+Monitoring checklist framework — all stages and paths
+Section 7
+Recommendation database — completed records
+Section 8
+Recommendation database — placeholder sections to complete
+Section 9
+Crop rotation matrix
+Section 10
+CSV import template structure
+2. Farm Context — Valencia City, Bukidnon
+Parameter
+Value
+Farm Name
+Elgreensyde
+Location
+Valencia City, Bukidnon, Philippines
+Elevation
+650-700 meters above sea level
+Climate Type
+Highland Tropical
+Average Temperature
+18-28 degrees C
+Cool Night Temperature
+Drops to 18 degrees C
+Rainy Season
+June to November
+Dry Season
+December to May
+Humidity
+High — above 70% especially during rainy season
+Fog and Mist
+Common during early mornings — delay foliar treatments until midday
+Base Soil
+Adtuyon volcanic semi-clay — pH 4.8 to 5.6 (acidic)
+Key Soil Challenge
+High phosphorus fixation in acidic clay — affects nutrient uptake across all crops
+Soil Amendments Used
+Carbonized Rice Hull (CRH), dried cow manure, vermicast
+Raw Rice Hull Warning
+Avoid in most potting mixes — high C:N ratio causes nitrogen immobilization during decomposition
+Lime Requirement
+Agricultural lime needed for most crops to raise pH toward 6.0 to 7.0
+Growing Formats
+Open ground raised beds and potted containers
+Operator
+Solo operator — maximum 5 tasks per day, Sunday off
+3. Inputs Inventory — Confirmed Products
+Product
+Type
+Standard Mix Rate
+Withholding Period
+Stock Unit
+Notes
+Neem Oil
+Organic Pesticide
+5ml per 1 liter water
+3 days — flavor alteration on edible foliage
+ml
+Always combine with insecticidal soap. Apply at dusk. Never spray on edible flower blooms.
+Insecticidal Soap
+Organic Pesticide
+5ml per 1 liter water
+3 days
+ml
+Combine with neem oil for synergistic effect. Acts as surfactant on waxy-leaved crops like Rosemary and Thyme.
+Potassium Bicarbonate
+Fungicide / Preventive
+4g (1 teaspoon) per 1 liter water
+0 days — safe to harvest same day
+grams
+Contact eradicant for powdery and white molds. Preventive against downy mildew. Apply to foliage only — never on edible flower blooms as it leaves white residue.
+Urea (46-0-0)
+Fertilizer — Nitrogen
+5g per 1 liter water soil drench (2.5g per liter during rainy season)
+0 days — rinse harvested leaves thoroughly
+grams
+Pure nitrogen — drives leaf production. Reduce to 3g per liter for Lemon Basil. Stop 1 week before harvest on mature plots. Avoid on Thyme, Rosemary, Tarragon. Do not apply during or before heavy rain.
+Complete Fertilizer (14-14-14)
+Fertilizer — Balanced NPK
+1 cup per 16 liters water (approximately 60g per 16 liters)
+0 days — rinse harvested leaves
+grams
+Balanced N-P-K. Use for seedling establishment and mature stage maintenance. Sub-surface banding more effective than broadcast in clay soil due to phosphorus fixation.
+ℹ Additional products from your storage at home should be added to the Inputs Inventory when you return. Use the Inputs Inventory module to add product name, current stock quantity, mix rate, and withholding period.
+4. Soil Mix Specifications Per Crop Group
+Five distinct soil mixes cover all 20 crops. The base is always Adtuyon semi-clay. Components vary by drainage requirements and organic matter sensitivity.
+Mix A — Standard Herbs (Parsley, Mints, Stevia, Basils, Brassicas)
+Component
+Ratio
+Notes
+Pulverized Adtuyon semi-clay
+40-50%
+Base structure and mineral content
+Carbonized Rice Hull (CRH)
+20-30%
+Aeration, drainage, pH buffering, silica for pest resistance
+Dried Cow Manure
+15%
+Slow-release organic nitrogen and microbial activity
+Vermicast
+15-20%
+Bioavailable nutrients, water retention, seedling establishment
+Raw Rice Hull
+Avoid
+High C:N ratio causes nitrogen immobilization during decomposition
+Mix B — Mediterranean Drought-Tolerant (Rosemary, Thyme, French Tarragon)
+🚫 Cow manure must be completely omitted for these three crops. Excessive organic nitrogen induces soft sappy growth immediately targeted by fungal pathogens.
+Component
+Ratio
+Notes
+Pulverized Adtuyon semi-clay
+30%
+Reduced to improve drainage
+Carbonized Rice Hull (CRH)
+40%
+Dominant component — critical macro-pore space
+Coarse river sand or pumice
+20%
+Essential for immediate drainage — no substitute
+Vermicast
+10%
+Minimal organic matter — these are light feeders
+Cow Manure
+0% — OMIT
+Causes root rot and foliar disease in these crops
+Top-dressing
+2cm coarse gravel or pumice
+Prevents low foliage from touching wet soil
+Mix C — Edible Flowers (Sweet William, Marigold, Globe Amaranth, Torenia, Blue Ternate)
+Component
+Ratio
+Notes
+Pulverized Adtuyon semi-clay
+40%
+Base structure
+Carbonized Rice Hull (CRH)
+30%
+Drainage and aeration
+Vermicast
+30%
+Rich organic base for continuous blooming — Torenia needs extra moisture retention
+Note for Globe Amaranth and Marigold
+Tolerates poorer drier soil
+Can reduce vermicast to 20% and add 10% coarse sand for these two varieties
+Note for Blue Ternate
+Standard Mix A acceptable
+Fixes own atmospheric nitrogen — does not require rich mix
+Mix D — Strawberry
+Component
+Ratio
+Notes
+Pulverized Adtuyon semi-clay
+30%
+Heavily amended — strawberry acutely sensitive to heavy clay
+Carbonized Rice Hull (CRH)
+40%
+Primary drainage component
+Raw Rice Hull
+10%
+Acceptable for strawberry only — adds drainage without nitrogen competition
+Vermicast
+20%
+Nutrient base — no synthetic heavy fertilizer during fruiting
+Top-dressing
+CRH or plastic mulch layer
+Prevents developing fruit from contacting wet soil — critical for Botrytis prevention
+Mix E — Raised Bed Crops (Basil and Brassicas in Ground Beds)
+Component
+Ratio
+Notes
+Native Adtuyon semi-clay
+50%
+Higher clay content acceptable in open ground
+Carbonized Rice Hull (CRH)
+20%
+Aeration and drainage
+Dried Cow Manure
+15%
+Organic nitrogen base
+Vermicast
+15%
+Nutrient availability and microbial diversity
+Mound Height
+30cm above ground level
+Critical for gravitational runoff during June-November monsoons — clay compacts severely
+Lime Application
+50g agricultural lime per sqm before planting
+Raises pH from 4.8 toward 6.0 — improves phosphorus and calcium availability
+5. Crop Library — All 20 Crop Records
+Records are organized by growing format: Potted Herbs, Raised Bed Crops, Potted Fruit, and Edible Flowers. Each record contains all data needed to populate the crop_library database table.
+5.1 Parsley (Petroselinum crispum)
+ℹ Bukidnon Advantage: Cooler temperatures produce thicker petioles and higher volatile oil retention. Superior to lowland-grown parsley.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Seedling
+0-21 days (may extend 3-5 days in cool nights)
+Radicle emergence, taproot developing
+Edema on leaf undersides from fog — cellular rupture from moisture absorption exceeding transpiration
+Vegetative Expansion
+22-60 days
+Rapid foliar proliferation, outer leaves expanding
+High humidity fungal pressure on dense foliage
+Harvest Stage
+60+ days
+Outer leaves reach 15cm in length
+Nitrogen leaching during heavy rain requiring split drenching
+Pot Requirements
+Field
+Specification
+Minimum Pot Diameter
+25cm
+Minimum Pot Depth
+20cm — accommodates taproot
+Pot Material
+Terracotta or UV-treated HDPE
+Soil Mix
+Mix A — with CRH increased to 30% for drainage
+Spacing Between Pots
+Minimum 15cm for airflow to prevent disease spread
+Note
+Potted culture strictly recommended — isolates from soil-borne oomycetes in wet Adtuyon clay
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+5g per pot
+Once at transplant — incorporated into lower half of potting media
+Basal phosphorus for taproot development
+Vegetative — Dry Season
+Urea (46-0-0)
+5g per liter
+150ml per pot every 14 days
+Sustains continuous cut-and-come-again harvesting
+Vegetative — Rainy Season
+Urea (46-0-0)
+2.5g per liter
+Every 7 days
+Mitigates heavy nitrate leaching during monsoon
+Over-fertilization Sign
+—
+—
+—
+Weak hyper-elongated petioles that lodge under heavy rain — immediately susceptible to fungal pathogens
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Aphids
+Green pear-shaped clusters
+Leaf curling, honeydew, sooty mold
+Apical meristems, leaf undersides
+5ml/L
+5ml/L — apply at dusk every 5 days
+Rainy season higher pressure
+Spider Mites
+Microscopic red or brown arachnids
+Fine yellow stippling, delicate webbing
+Leaf undersides
+5ml/L — strong ovicide, thorough under-canopy coverage
+5ml/L
+Dec-May dry season peak
+Leafminers
+Small yellow-black flies, larvae internal to leaf
+Winding white serpentine tunnels through leaf epidermis
+Inside leaf tissue
+5ml/L — penetrates cuticle to disrupt larval molting
+Ineffective against internal larvae
+Both seasons
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Botrytis Blight
+Botrytis cinerea (Fungus)
+Water-soaked brown lesions on stems
+Humidity above 90%, temperature 18-22 degrees C, Bukidnon rainy season
+5g/L preventive every 7 days
+Excise infected stems immediately. 0-day withholding.
+Septoria Leaf Spot
+Septoria petroselini (Fungus)
+Small sunken angular tan spots with dark margins and black fruiting bodies
+Rain splash from contaminated soil
+5g/L preventive
+Escalate to copper-based fungicide if defoliation exceeds 20%. Copper 7-day withholding.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Outer petioles reach full expansion
+Harvest Method
+Cut-and-come-again — sever outer stems 3cm above crown with sterilized shears
+Days to First Harvest
+60-75 days from sowing under Bukidnon conditions
+Harvest Interval
+14-21 days
+Yield Per Pot
+30-50 grams fresh biomass per cycle
+Plot Lifespan
+12 months potted — substrate refresh required annually
+Post-Harvest
+Hydro-cool in 4 degrees C water immediately. Store in high-humidity polyethylene packaging. Highly susceptible to wilting in tropical ambient air.
+⚠ Rainy Season: Nitrogen leaching is severe — split-drenching strategy mandatory. Apply half rate every 7 days instead of full rate every 14 days.
+ℹ Dry Season: Optimal flavor development. Cool nights slow respiration and increase accumulation of apiol and myristicin essential oils.
+5.2 Peppermint (Mentha x piperita) and Spearmint (Mentha spicata)
+🚫 Containment Mandatory: Invasive rhizomic spread. Must be strictly confined to potted containers at all times. Never plant in open ground.
+ℹ Bukidnon Advantage: Day-night temperature differential upregulates menthol in peppermint and carvone in spearmint — dramatically superior aroma versus lowland cultivation.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Establishment
+0-25 days
+Rapid horizontal stolon and rhizome expansion
+Roots must not dry completely — cellular collapse is rapid
+Vegetative
+25-70 days
+Vertical ascension of square stems, dense canopy forming
+Dense canopy traps moisture — fungal rot risk during rainy season
+Reproductive — Prevent
+Ongoing
+Flower bud initiation — diminishes leaf quality
+Continuous harvesting required to prevent flowering
+Pot Requirements
+Field
+Specification
+Minimum Pot Diameter
+30cm — wide and shallow suits rhizome horizontal navigation
+Minimum Pot Depth
+15cm
+Pot Material
+Plastic or terracotta
+Soil Mix
+Mix A with increased vermicast — 40% clay, 20% CRH, 20% vermicast, 20% cow manure or compost
+Drainage
+Critical — mints prefer wet roots but dense Bukidnon clay can induce hypoxia if drainage holes obstructed
+Pot Division
+Divide and repot entirely into fresh media every 12 months
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+10g per pot top-dressed
+Once at 14 days after transplant — scratch into upper 5cm
+Higher rate than other herbs — aggressive feeder
+Active Growth
+Urea (46-0-0)
+5g per liter
+200ml per pot every 10 days
+Foliar and drench combined
+Post-Harvest Recovery
+Vermicast Tea
+100ml concentrate per liter
+Immediately after aggressive cutting
+Stimulates dormant axillary buds for rapid regrowth
+Over-fertilization Sign
+—
+—
+—
+Exceptionally dark brittle leaves curling downward, marked reduction in aromatic intensity from diluted essential oils
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Flea Beetles
+Tiny metallic black beetles that jump when disturbed
+Hundreds of small shot-holes — renders leaves unmarketable
+Upper and lower leaf surfaces
+5ml/L — antifeedant — upper and lower coverage
+5ml/L
+Both seasons
+Spider Mites
+Microscopic red or brown dots
+Webbing and stippling
+Leaf undersides
+5ml/L
+5ml/L
+Dec-May dry season peak
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Mint Rust
+Puccinia menthae
+Small dusty orange or rust-brown pustules on leaf undersides
+18-20 degrees C nights combined with prolonged moisture from mist or rain — severe Bukidnon risk
+Ineffective against rust
+Remove and destroy all infected stems — treating in place is ineffective. Systemic fungicides have 14+ day withholding — unsuitable for cut-and-come-again.
+Powdery Mildew
+Erysiphe cichoracearum
+White talcum-powder spots on upper leaf surface
+High humidity with low rainfall periods
+10g/L — contact eradicant
+Treat in place if caught early. Improve airflow between pots.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Stems reach 15-20cm, aromatic when touched
+Harvest Method
+Shear stems leaving 5cm of basal growth for regeneration
+Days to First Harvest
+45-60 days from transplant
+Harvest Interval
+15-20 days
+Yield Per Pot
+100-150 grams per 30cm pot per cycle
+Post-Harvest
+Mints oxidize and turn black if bruised. Handle gently. Chill to 5 degrees C immediately. No physical crushing during packing.
+⚠ Rainy Season: Monitor for dense canopy creating impenetrable moisture trap inducing fungal rot. Harvest more frequently to maintain airflow.
+5.3 Rosemary (Salvia rosmarinus)
+🚫 Potted culture absolute and mandatory. Planting in open-ground Adtuyon clay guarantees 100% crop mortality.
+🚫 Phytophthora Root Rot has NO curative treatment. Prevention through drainage engineering is the only defense.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Root Establishment
+0-40 days — HIGHEST RISK PERIOD
+Slow initial growth, root anchoring
+Overwatering induces immediate Phytophthora wilt. One overwatering event can be fatal.
+Vegetative Development
+40-120 days
+Slow lignifying growth, aromatic stem development
+Continued drainage vigilance required — heavy rains must drain within seconds
+Maturity
+120+ days
+Woody base established, harvest intervals regular
+Long-lived perennial if drainage is maintained
+Pot Requirements
+Field
+Specification
+Minimum Pot Diameter
+25cm
+Minimum Pot Depth
+30cm — deep terracotta essential
+Pot Material
+Unsealed terracotta mandatory — porous walls facilitate lateral moisture evaporation
+Soil Mix
+Mix B — 30% clay, 40% CRH, 20% coarse river sand or pumice, 10% vermicast. Cow manure 0% — omit entirely.
+Top-dressing
+2cm coarse gravel or pumice over soil surface
+pH Requirement
+6.5-7.0 — apply 10g agricultural lime per pot at planting to correct from native 4.8
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+5g per pot
+Once — mixed into substrate before transplanting
+Very light feeder
+Vegetative
+Urea (46-0-0)
+2.5g per liter
+Once every 30 days only
+Stop entirely during rainy season — leaching risk and excessive soft growth
+Over-fertilization Sign
+—
+—
+—
+Excessively rapid drooping bright green growth, marked loss of aromatic intensity
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Spittlebugs
+Nymphs in frothy spit-like masses on stems
+Sap extraction, localized stunting
+Rosemary stems
+5ml/L — wash foam off with water jet FIRST then apply
+5ml/L — soap is surfactant for neem adhesion on waxy cuticle
+Both seasons
+Thrips
+Tiny slender insects
+Silvery stippling and distortion of new tips
+New growth tips
+5ml/L
+5ml/L
+Both seasons
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Phytophthora Root and Crown Rot
+Phytophthora spp. (Oomycete)
+Sudden catastrophic wilting despite wet soil. Roots dark, mushy, sloughing off vascular cylinder.
+Poor drainage and persistent June-November rains
+No curative protocol exists
+Immediately seal plant and substrate in plastic and destroy. Do not compost. Disinfect pot before reuse.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Green non-woody stems ready when 10-15cm long
+Harvest Method
+Prune green non-woody stems only. Never cut into old leafless wood — prevents regeneration.
+Days to First Harvest
+90-120 days from transplant
+Harvest Interval
+30 days
+Yield Per Pot
+15-30 grams per month
+Lifespan
+2-3 years if protected from rot
+Post-Harvest
+Dry rapidly below 35 degrees C in low-humidity environment. Fresh storage in tropical humidity leads to rapid degradation.
+🚫 Rainy Season: Overhead protection (UV-treated polyethylene tunnels) REQUIRED. Consecutive days of torrential rain will result in 100% crop mortality.
+ℹ Dry Season: Optimal growing period. Mediterranean-like microclimate allows intense flavor development impossible in lowland humidity.
+5.4 Thyme (Thymus vulgaris)
+🚫 Overhead rain protection REQUIRED during June-November monsoon — same as Rosemary. Cow manure OMITTED from soil mix.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Establishment
+0-30 days
+Rooting and initial branching — cool nights reduce transplant shock
+Overwatering risk — drainage must be immediate
+Vegetative
+30-90 days
+Rapid lateral branch accumulation, aromatic leaves
+Dense foliage creates moisture microclimate — fog triggers fungal die-off from plant center
+Maturity and Harvest
+90+ days
+Stem base lignifying (turning woody)
+Cutting into woody base kills plant — harvest green stems only
+Pot Requirements
+Field
+Specification
+Minimum Pot Diameter
+20cm
+Minimum Pot Depth
+20cm
+Pot Material
+Unsealed terracotta — lateral moisture evaporation essential
+Soil Mix
+Mix B — 30% clay, 40% CRH, 20% coarse river sand or pumice, 10% vermicast. Cow manure 0% — omit entirely.
+Top-dressing
+2cm coarse gravel or pumice — prevents foliage contact with wet soil
+pH Requirement
+6.5-7.0 — add 10g agricultural lime per pot at planting
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+2-3g per pot
+Once — incorporated into pot base at planting
+Extremely light feeder
+Maintenance
+Vermicast top-dressing
+1 handful per pot
+Every 45 days
+Only ongoing fertilization needed
+Deficiency Correction
+Urea (46-0-0)
+1g per liter only
+Only if severe yellowing present
+Avoid entirely if possible
+Over-fertilization Sign
+—
+—
+—
+Long weak floppy stems, abnormally large pale green leaves, distinct lack of thyme scent
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Spider Mites
+Microscopic arachnids
+Fine yellow stippling, delicate webbing
+Leaf undersides
+5ml/L
+5ml/L every 7-10 days — apply late afternoon
+Dec-May dry season peak
+Aphids
+Small green or black clusters
+Curled leaves, sticky residue
+New growth tips
+5ml/L
+5ml/L
+Rainy season higher pressure
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Phytophthora Root Rot
+Phytophthora spp.
+Sudden wilt despite wet soil, mushy black roots
+Poor drainage, heavy rain
+No curative treatment
+Remove and destroy immediately. Same protocol as Rosemary.
+Botrytis Blight
+Botrytis cinerea
+Gray fuzzy growth on inner shaded stems — dieback
+Cool nights, fog, dense canopy
+5g/L preventive every 7-10 days during rainy season
+Treat in place if minor — prune affected stems for airflow. 0-day withholding.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Stems 15cm long with dense foliage
+Harvest Method
+Cut-and-come-again — leave at least 5cm of woody lower stem intact. Never cut into leafless wood.
+Days to First Harvest
+60-80 days from transplant
+Harvest Interval
+21-30 days
+Yield Per Pot
+20-30 grams of fresh sprigs per cycle
+Lifespan
+2-3 years if protected from rot
+Post-Harvest
+Refrigerate at 4 degrees C in slightly vented bags or dry by hanging in warm dark room — excellent storage crop
+🚫 Rainy Season: Overhead rain protection required. Same risk profile as Rosemary.
+ℹ 3-day withholding period for neem oil and insecticidal soap to prevent flavor alteration.
+5.5 French Tarragon (Artemisia dracunculus)
+🚫 HIGHEST RISK CROP. No tropical adaptation. Potted culture with overhead rain protection is absolute — open ground guarantees 100% mortality.
+🚫 Alternative: Consider Mexican Tarragon (Tagetes lucida) which is hardier and better adapted to Philippine humid conditions.
+ℹ The 18-28 degrees C highland climate of Valencia City provides a marginal physiological window for authentic French Tarragon that is impossible in lowland Philippines. Dry season December-May is the optimal production window.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Root Establishment
+0-40 days — CRITICAL RISK
+Slow herbaceous growth initiation
+Single overwatering event causes immediate Phytophthora wilt and plant death
+Vegetative Development
+40-120 days
+Herbaceous branching, aromatic leaf development
+Continued drainage vigilance — any moisture accumulation is fatal
+Harvest Stage
+120+ days — dry season only
+Dense aromatic foliage on upper two-thirds of stem
+Monsoon season requires complete overhead protection or plant death certain
+Pot Requirements — Same as Rosemary
+Field
+Specification
+Minimum Pot Diameter
+25cm
+Minimum Pot Depth
+30cm — deep terracotta
+Pot Material
+Unsealed terracotta mandatory
+Soil Mix
+Mix B — identical to Rosemary. Cow manure 0%.
+pH Requirement
+6.5-7.0 — apply 10g agricultural lime per pot at planting
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+5g per pot
+Once at planting
+Light feeder
+Vegetative — Dry Season Only
+Urea (46-0-0)
+2.5g per liter
+Once every 30 days
+Stop entirely during rainy season
+Over-fertilization Sign
+—
+—
+—
+Drooping bright green growth, complete loss of tarragon anise aroma
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Upper two-thirds of herbaceous stem dense with aromatic leaves
+Harvest Method
+Strip leaves from upper two-thirds of stem — do not cut into woody base
+Days to First Harvest
+120+ days
+Yield Per Pot
+15-30 grams per month — low yield but high market value
+Post-Harvest
+Dry rapidly below 35 degrees C. Fresh tropical storage leads to rapid rot.
+🚫 Rainy Season: UV-treated polyethylene high tunnel or greenhouse roofing MANDATORY. No exceptions.
+ℹ Dry Season Dec-May: Optimal production window. Mediterranean microclimate conditions achievable in Bukidnon highland.
+5.6 Stevia (Stevia rebaudiana)
+ℹ High commercial viability in Bukidnon. Cooler temperatures prevent heat-induced early flowering — the primary challenge of lowland cultivation. Vermicast-based nutrition synergizes with stevia preference for organic slow-release nutrients.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Seedling or Cuttings
+0-30 days
+Root system establishment, high humidity required
+Damping off if medium stays waterlogged
+Vegetative
+30-80 days
+Harvestable biomass production, rapid leaf expansion
+Reproductive stage must be actively prevented — harvest before flower buds open
+Reproductive — Prevent
+Ongoing
+Floral bud initiation — rapid decline in stevioside concentration
+Harvest immediately when any flower buds appear to preserve sweetness
+Pot Requirements
+Field
+Specification
+Minimum Pot Diameter
+20cm
+Minimum Pot Depth
+20cm
+Soil Mix
+Mix A variant — 40% clay, 30% CRH, 20% vermicast, 10% cow manure
+Note
+More tolerant of temporary moisture saturation than Rosemary or Tarragon but good drainage still required
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+5g per pot
+Once at planting
+Incorporated into soil
+Maintenance
+Vermicast Tea
+100ml concentrate per liter
+Every 14 days
+Primary ongoing nutrition — maintains glycoside levels
+Deficiency Only
+Urea (46-0-0)
+2.5g per liter
+Only if chlorosis appears
+Avoid heavy synthetic N — reduces leaf sweetness by diluting steviol glycosides
+Over-fertilization Sign
+—
+—
+—
+Lush vegetative growth with zero flowering capacity — excessive nitrogen drives leaves not sweetness compounds
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Whiteflies
+Tiny white moths erupting in clouds when canopy disturbed
+Yellowing from sap extraction
+Leaf undersides
+5ml/L — directed upwards into canopy
+5ml/L
+Both seasons
+Cutworms
+Fleshy caterpillars resting on soil during day
+Sever young stems at night at soil level
+Soil surface
+5ml/L — preventive
+Not effective
+Both seasons — manual removal primary method
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Septoria Leaf Spot
+Septoria steviae
+Dark angular lesions on lower foliage progressing upward causing leaf drop
+High humidity, poor air circulation
+5g/L preventive every 10 days during rainy season
+Increase pot spacing. Water at soil level only. Remove and destroy severely infected plants.
+White Mold
+Sclerotinia sclerotiorum
+White cottony mycelial growth at stem base
+High humidity
+5g/L preventive
+Remove and destroy infected plants. Cannot treat in place effectively.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Plant reaches 30-40cm height. Harvest BEFORE flower buds open.
+Harvest Method
+Cut-and-come-again — clip stems. 30-day interval between yields.
+Days to First Harvest
+30-80 days depending on establishment method
+Yield Per Pot
+30-60 grams fresh leaves per pot
+Post-Harvest
+Dry rapidly — crush into green powder or steep fresh for liquid extracts
+5.7 Sweet Basil, Lemon Basil, and Thai Basil
+ℹ Bukidnon Advantage: Slightly below optimal temperature range produces thicker more durable foliage with deeper aroma than lowland basil. Growth is marginally slower but quality is superior.
+⚠ Rainy Season: Basil Downy Mildew represents near 100% crop loss risk for open raised beds without protective polyethylene tunnels or aggressive spacing.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Seedling
+0-14 days
+Vulnerable establishment period
+Damping-off fungi in cold wet Bukidnon soils — highest tray stage risk
+Vegetative
+15-40 days
+Exponential leaf expansion. Cool 18C nights = compact internode spacing.
+Aphids, leafminers, and downy mildew pressure begins
+Reproductive — Prevent
+40+ days
+Inflorescence emergence — pinch immediately
+Flowering introduces bitter camphor notes — apical meristems must be aggressively pinched
+Raised Bed Requirements — Sweet and Lemon Basil
+Field
+Specification
+Minimum Bed Depth
+25cm
+Mound Height
+30cm — elevated for rapid gravitational runoff during June-November monsoons
+Plant Spacing
+25cm between plants, 30cm between rows
+Plants Per Square Meter
+Approximately 13
+Soil Mix
+Mix E — 50% clay, 20% CRH, 15% cow manure, 15% vermicast
+Basal Fertilizer
+50g complete (14-14-14) per square meter incorporated 7 days before transplanting
+Pot Requirements — Sweet, Lemon, Thai Basil
+Field
+Specification
+Minimum Pot Diameter
+20cm
+Soil Mix
+Mix A — 50% clay, 20% CRH, 15% cow manure, 15% vermicast
+Note
+Potted culture prevents basal stem rot common in wet raised beds
+Fertilizer Schedule
+Stage
+Product
+Rate — Raised Bed
+Rate — Potted
+Frequency
+Notes
+Basal
+Complete (14-14-14)
+50g per sqm
+5g per pot
+Once 7 days before transplant
+Incorporated into root zone
+Vegetative
+Urea (46-0-0)
+5g/L spray
+5g/L drench
+Every 10-14 days
+Rainy season: suspend before heavy rain forecasts
+Rainy Season Adjustment
+Urea (46-0-0)
+Split applications
+2.5g/L every 7 days
+More frequent smaller doses
+Maximizes uptake — nitrate leaches rapidly from raised beds
+Lemon Basil Special Rate
+Urea (46-0-0)
+3g/L maximum
+3g/L maximum
+Same frequency
+Thinner leaves burn at standard rates
+Over-fertilization Sign
+—
+—
+—
+—
+Exceptionally large dark green leaves lacking aroma — structurally weak — massive aphid attraction
+Variety-Specific Notes
+Variety
+Sensitivity
+Key Difference
+Special Handling
+Sweet Basil
+Moderate
+Most susceptible to downy mildew. Large leaves show deficiency symptoms clearly.
+Standard rates apply
+Thai Basil
+Lowest sensitivity
+Marginally higher genetic resistance to downy mildew and Fusarium. Most heat tolerant.
+Standard rates apply. Natural purple pigmentation — use growth rate not color for phosphorus deficiency diagnosis.
+Lemon Basil
+Highest sensitivity
+Thinnest leaves — burns fastest. Deficiencies appear fastest. Bolts earliest.
+Reduce all fertilizer rates by 30-40%. Monitor most frequently.
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Leafminers
+Small yellow-black flies, larvae internal
+White serpentine tunnels through leaf tissue
+Inside leaf tissue
+5ml/L — translaminal, penetrates cuticle, disrupts larval molting. Apply every 7 days.
+Ineffective against internal larvae
+Both seasons
+Flea Beetles
+Tiny black jumping beetles
+Shot-hole damage across leaf surface
+Leaf surface
+5ml/L antifeedant — upper and lower coverage
+5ml/L
+Both seasons
+Aphids
+Green pear-shaped clusters on tips
+Honeydew, sooty mold, leaf curl, stunting
+New growth tips, leaf undersides
+5ml/L at dusk every 5 days
+5ml/L
+Rainy season higher pressure
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Basil Downy Mildew
+Peronospora belbahrii (Oomycete)
+Diffuse yellowing on upper leaf surface. Gray-purple fuzzy sporulation on underside only.
+High humidity, cool nights, Bukidnon rainy season — near 100% loss risk in open beds
+5g/L preventive — alters leaf surface pH to inhibit spore germination. Apply every 5-7 days during risk period.
+Stage 1 (yellowing only): Remove affected, treat neighbors, improve airflow. Stage 2 (sporulation): Remove and destroy all affected, treat farm-wide, stop overhead watering. No curative once sporulation begins.
+Fusarium Wilt
+Fusarium oxysporum (Fungus)
+Sudden one-sided wilting. Brown vascular discoloration when stem cut open.
+Soil-borne — persists in bed
+No effective treatment
+Remove plant. Affected raised beds require 3-year rotation away from Lamiaceae crops.
+Crop Rotation — Raised Bed Crops Only
+Parameter
+Detail
+Plant Family
+Lamiaceae
+Avoid Planting After
+Other Lamiaceae — mints, oregano, rosemary — prevents Fusarium accumulation
+Recommended Successors
+Legumes (beans or peas) to restore depleted soil nitrogen. Deep-rooted Alliums to break disease cycles.
+Resting Period
+14-21 days
+Amendments During Rest
+50g agricultural lime per sqm + 2 liters CRH per sqm — stabilizes pH and rebuilds soil aggregate eroded by heavy rainfall
+Harvest Information
+Field
+Detail
+Readiness Indicator
+Plant reaches 15cm — pinch apical meristem to force lateral branching
+Harvest Method
+Cut-and-come-again lateral branches every 7-10 days
+Days to First Harvest
+35-50 days from transplant under Bukidnon conditions
+Harvest Interval
+7-10 days
+Yield — Raised Bed
+1.5-2.0 kg per square meter over 60-80 day productive lifespan
+Yield — Potted
+100-200 grams per pot over productive lifespan
+Plot Lifespan
+60-80 productive days — then clear
+Post-Harvest
+Do NOT refrigerate — leaves oxidize and blacken below 10 degrees C. Store in ambient high-humidity conditions for 3-5 day shelf life.
+5.8 Pechay, Pakchoi, and Mustasa (Brassicaceae Family)
+ℹ Bukidnon Advantage: 18-28 degrees C is the ABSOLUTE PHYSIOLOGICAL OPTIMUM for these crops. Cooler nights produce thicker crisp petioles, deeper green foliage, and extended vegetative windows versus lowland production.
+🚫 Clubroot (Plasmodiophora brassicae) is incurable and persists in soil for over a decade. If detected, quarantine the bed permanently for brassicas.
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Seedling
+0-14 days
+Rapid germination, true leaf emergence
+Flea beetle damage devastating to young seedlings — preventive neem from 7 DAT
+Vegetative Expansion
+15-35 days
+Exponential biomass accumulation, diurnal swings enhance turgidity
+Cabbage webworm boring into apical bud under silken web
+Harvest Maturity
+30-45 days
+Before any floral initiation — over-maturation produces fibrous petioles
+Heavy rain physically damages delicate leaves — soil splash spreads soft rot bacteria
+Raised Bed Requirements
+Field
+Specification
+Minimum Bed Depth
+20cm
+Mound Height
+25cm — ensures critical drainage during monsoons
+Plant Spacing
+15cm between plants, 20cm between rows
+Plants Per Square Meter
+Approximately 30 — high density
+Soil Mix
+Mix E with 20% vermicast amendment — research in Mindanao confirms 20% vermicompost yields maximum total biomass for Pechay
+Basal Fertilizer
+50g complete (14-14-14) per sqm broadcast and incorporated 3 days before transplanting
+Mulching
+CRH or clean straw mulch over bed surface — mitigates soil splash spreading soft-rot bacteria to leaf axils during heavy Bukidnon rains
+Fertilizer Schedule
+Stage
+Product
+Rate
+Timing
+Notes
+Basal
+Complete (14-14-14)
+50g per sqm
+3 days before transplant
+Broadcast and incorporated
+1st Side-dress
+Urea (46-0-0)
+5g/L soil drench
+14 days after transplant
+First nitrogen push
+2nd Side-dress
+Urea (46-0-0)
+5g/L soil drench
+21 days after transplant
+Final expansion fuel
+Over-fertilization Sign
+—
+—
+—
+Marginal tip burn (calcium transport lag). Dark soft tissue highly attractive to aphids.
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Cabbage Webworm
+Larvae boring under silken web
+Bores into apical bud causing plant death or unmarketable distorted heads
+Central growing whorl
+5ml/L preventive from 7 DAT — high pressure application directly into central whorl
+5ml/L
+Both seasons
+Flea Beetles
+Tiny black jumping beetles
+Shot-hole damage devastating to young seedlings
+Leaf surface
+5ml/L antifeedant
+5ml/L
+Both seasons
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Bacterial Soft Rot
+Erwinia carotovora
+Water-soaked mushy lesions at petiole base, total structural collapse, foul odor
+Waterlogged clay — 25cm raised mounds are only viable prevention
+Ineffective — bacterial
+No curative. Maintain 25cm mound height. Remove affected plants.
+Clubroot
+Plasmodiophora brassicae (Slime Mold)
+Roots massively swollen, galled, distorted. Plant wilts during day and recovers at night.
+Soil-borne, persists 10+ years
+Ineffective
+QUARANTINE BED. No brassicas ever again. 100g agricultural lime per sqm raises pH to suppress pathogen.
+Crop Rotation
+Parameter
+Detail
+Plant Family
+Brassicaceae
+Avoid Planting After
+Cabbage, radish, broccoli, or any other brassica — prevents Clubroot and Webworm accumulation
+Recommended Successors
+Solanaceous crops (tomatoes, eggplants) or Alliums
+Resting Period
+Minimum 21 days
+Amendments During Rest
+100g agricultural lime per sqm — raises pH to actively suppress Plasmodiophora clubroot pathogen in acidic Bukidnon soils
+Harvest Information
+Field
+Detail
+Readiness Indicator
+30-45 days from sowing — before any floral initiation
+Harvest Method
+Sever entirely at taproot base — single harvest crop
+Yield Per Square Meter
+2.5-3.5 kg
+Shelf Life
+2-3 days in tropical ambient — highly perishable
+Post-Harvest
+Wash in cool water. Transfer to 4 degrees C refrigeration immediately to maintain cellular turgidity for market.
+5.9 Strawberry (Fragaria x ananassa)
+ℹ Bukidnon is one of the few regions in the Philippines capable of commercial strawberry production alongside Benguet and Mt. Apo. Night temperatures consistently below 22 degrees C trigger and sustain floral induction.
+🚫 Rainy season open-field potted strawberries will suffer near-total fruit loss to Botrytis and physical rain damage. Covered production required.
+⚠ Neem oil applied to ripening berries permanently alters flavor. Cease all neem applications 7-10 days before fruit coloration.
+Recommended Varieties for Valencia City Bukidnon
+Variety
+Profile
+Best For
+Sweet Charlie
+Moderate yield, superior sweetness, early fruiting, shorter shelf life
+Local Valencia City and CDO market — flavor premium
+Festival
+Higher total volume, firmer and more transportable berries
+Wholesale and market stall — transport quality
+Honeoye
+Day-neutral, consistent performance
+Year-round production attempt
+San Andreas
+High volume, firm, commercial shipping variety
+If developing broader distribution
+Growth Stages
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Establishment
+0-30 days
+Runner propagation, rooting, crown expansion
+Root sensitivity to heavy clay — drainage must be absolute
+Vegetative Development
+30-60 days
+Compound leaf production, carbohydrate storage in crown
+Day-night temperature differential maximizes carbohydrate storage for fruiting
+Flowering and Fruiting
+60+ days, 3-4 months continuous under Bukidnon climate
+Cooler nights trigger floral induction
+Botrytis from Bukidnon humidity is primary fruit loss risk
+Pot Requirements
+Field
+Specification
+Pot Size
+20cm diameter individual pots or long rectangular substrate troughs on elevated benches
+Elevation
+Elevated bench culture — isolates fruit from soil pests, improves drainage, prevents physical rot
+Soil Mix
+Mix D — 30% clay, 40% CRH, 10% raw rice hull, 20% vermicast. Near-soilless conditions. Drainage must be immediate and absolute.
+Top-dressing
+CRH or plastic mulch — prevents developing fruit from contacting wet soil. Critical Botrytis prevention.
+Fertilizer Schedule
+Stage
+Product
+Rate
+Frequency
+Notes
+Vegetative
+Complete (14-14-14)
+5g per pot
+Once at planting
+Supports crown and leaf development
+Fruiting Transition
+Vermicast Tea or K-heavy organics
+100ml concentrate per liter
+Every 10 days
+Potassium drives fruit sizing and coloration
+During Flowering and Fruiting
+Urea (46-0-0)
+AVOID
+—
+High nitrogen during fruiting forces excessive foliage at expense of blossoms. Results in soft watery berries susceptible to post-harvest rot.
+Over-fertilization Sign
+—
+—
+—
+Soft watery berries that bruise easily and succumb rapidly to post-harvest rot
+Common Pests
+Pest
+Appearance
+Damage
+Location
+Neem Rate
+Soap Rate
+Season
+Two-Spotted Spider Mites
+Microscopic with visible webbing in severe cases
+Bronzing, yellowing, stippling of leaves — heavy webbing
+Leaf undersides
+5ml/L — STOP 7-10 days before fruit coloration
+5ml/L
+Dec-May dry season — populations explode
+Thrips
+Microscopic slender insects
+Bronze and cracked fruit surface, failure to expand — feeds beneath calyx
+Beneath calyx of developing fruit
+5ml/L — STOP 7-10 days before fruit coloration
+5ml/L
+Both seasons
+Common Diseases
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Anthracnose
+Colletotrichum spp.
+Sunken dark brown to black circular lesions on ripening fruit
+Bukidnon humid rainy season
+5g/L moderate preventive suppression only — cannot cure infected fruit
+Remove and destroy infected berries immediately to prevent spore dispersal. Avoid overhead watering — drip irrigation only.
+Botrytis Fruit Rot
+Botrytis cinerea
+Rapid-spreading gray fuzz encompassing entire berry from calyx or areas touching wet soil
+Bukidnon rainy season humidity — catastrophic risk in open field
+5g/L preventive — cannot cure
+Remove and destroy. Elevate pots. No overhead watering. Covered production during monsoon.
+Harvest Information
+Field
+Detail
+Readiness Indicator
+75-100% red coloration
+Harvest Method
+Pinch and snap stem 1cm above calyx — never pull fruit directly (causes fatal bruising)
+Fruiting Duration
+3-4 months continuous under optimal Valencia City Bukidnon management
+Yield Per Plant
+200-400 grams over the season under optimal management
+Post-Harvest
+Cool to 2 degrees C mandatory to halt deterioration. Sweet Charlie: superior flavor, shorter shelf life. Festival: higher volume, firmer and more transportable.
+5.10 Edible Flowers — Sweet William, French Marigold, Torenia, Blue Ternate, Globe Amaranth
+🚫 PESTICIDE-FREE ZONE. Chemical pesticides are strictly prohibited on edible flower crops. Neem oil and insecticidal soap applied to vegetative parts ONLY — never to open blooms.
+🚫 Any bloom showing Botrytis spotting is immediately unsafe for culinary consumption. Discard and destroy.
+ℹ Blue Ternate is highly sought after by local cafes in Valencia City and CDO for color-changing teas — strong commercial opportunity as a perennial low-maintenance crop.
+ℹ Bukidnon Advantage: Cool nights intensify anthocyanin pigmentation — deeper reds, purples, and pinks impossible to achieve in lowland heat. Superior visual quality for premium market.
+Individual Crop Profiles
+Crop
+Scientific Name
+Family
+Growth Type
+Special Notes
+Sweet William
+Dianthus barbatus
+Caryophyllaceae
+Biennial managed as annual
+Only petals edible — calyx and white petal base are bitter. Highly ethylene-sensitive post-harvest.
+French Marigold
+Tagetes patula
+Asteraceae
+Annual
+Strong pest-repellent properties. Petals only — calyx bitter.
+Torenia
+Torenia fournieri
+Linderniaceae
+Annual
+Shade-tolerant — only flower requiring partial shade. Whole flower edible. Thrives during overcast rainy season.
+Blue Ternate
+Clitoria ternatea
+Fabaceae
+Vining perennial legume
+Fixes own atmospheric nitrogen — no urea needed. Requires immediate trellising. Whole flower edible. Color-changing tea application.
+Globe Amaranth
+Gomphrena globosa
+Amaranthaceae
+Annual
+Drought-tolerant. Tolerates poorer drier soil. Whole clover-like bract edible.
+Growth Stages — All Edible Flowers
+Stage
+Days
+Key Indicators
+Bukidnon Risk
+Vegetative Growth
+0-40 days
+Rapid expansion, root establishment. Blue Ternate needs immediate trellising and apical pinching for bushy growth.
+Botrytis pressure from humidity — water at soil level only
+Floral Initiation
+40-60 days
+Phosphorus dependency peaks for bud formation
+Nitrogen excess causes blind growth — all leaves no flowers
+Continuous Blooming
+60+ days
+Regular harvesting prevents seed set prolonging bloom phase indefinitely
+Heavy rain physically bruises petals — covered production required for edible-grade output during monsoon
+Pot Requirements — All Edible Flowers
+Field
+Specification
+Minimum Pot Diameter
+20cm
+Soil Mix Standard
+Mix C — 40% clay, 30% CRH, 30% vermicast
+Globe Amaranth and Marigold Variation
+Tolerates poorer soil — reduce vermicast to 20%, add 10% coarse sand
+Blue Ternate Variation
+Mix A acceptable — fixes own nitrogen, standard mix sufficient
+Torenia Requirement
+Consistently moist highly organic media — increase vermicast to 35%
+Sweet William pH
+Apply 10g agricultural lime per pot — calcium deficiency risk in acidic Adtuyon clay
+Fertilizer Schedule — All Edible Flowers
+Stage
+Product
+Rate
+Frequency
+Notes
+Establishment
+Complete (14-14-14)
+10g per pot
+Once at planting — incorporated
+Phosphorus base for bloom development
+Maintenance
+Vermicast top-dressing
+1 handful per pot
+Every 30 days
+Primary ongoing nutrition
+Blue Ternate
+Urea (46-0-0)
+AVOID entirely
+—
+Fixes own nitrogen — urea application causes all-foliage no-flower result. If yellowing appears check for root rot before applying any nitrogen.
+All others
+Urea (46-0-0)
+Only if severe basal chlorosis
+2.5g/L maximum — single application
+Stop immediately once resolved — excess nitrogen = no flowers
+Sweet William — Vegetative Only
+Urea (46-0-0)
+2.5g/L
+First 40 days only
+STOP completely once flower buds appear
+Common Pests — All Edible Flowers
+Pest
+Appearance
+Damage
+Location
+Management
+Season
+Thrips
+Tiny slender fast-moving insects hiding in flower heads
+Brown scarred streaks on petals, premature petal browning and drop
+Deep inside complex flower heads — Marigold and Sweet William
+Blue sticky traps above canopy for non-chemical control. Neem oil 5ml/L and soap 5ml/L on vegetative structure ONLY — never on open blooms.
+Both seasons
+Scale Insects
+Immobile armored bumps on stems
+Sap loss, stunting — notably Globe Amaranth
+Stems
+Neem oil 5ml/L on stems only with soap as surfactant
+Both seasons
+Common Diseases — All Edible Flowers
+Disease
+Causal Org
+Early Symptoms
+Trigger
+K-Bicarb Rate
+Action
+Botrytis Blight
+Botrytis cinerea
+Water-soaked spots on petals rapidly becoming fuzzy gray-brown mold
+Persistent Bukidnon rains, fog, wet petals — catastrophic to Sweet William and Marigold
+5g/L on foliage ONLY — never on blooms — will leave white residue on edible petals
+Remove and destroy infected blooms daily (deadheading). Stop overhead watering completely. Water at soil level only. FOOD SAFETY: Any bloom with Botrytis is unsafe for consumption.
+White Mold
+Sclerotinia sclerotiorum
+White cottony growth — Globe Amaranth specific in high humidity
+High humidity
+5g/L preventive on foliage
+Remove and destroy infected plants
+Harvest Information — All Edible Flowers
+Field
+Detail
+Harvest Timing
+Early morning after dew has dried but before midday heat and wilting
+Sweet William
+Harvest when outer 15-20% of florets on flower head are fully open. Cut stem deep into foliage to encourage second flush. 5-8 usable stems per pot per cycle. 70-90 days to first harvest.
+French Marigold
+Pluck individual petals only — calyx is bitter. Regular deadheading prolongs bloom phase.
+Torenia
+Whole flower edible. Harvest in morning. Shade-tolerant — produces through overcast rainy season when sun-loving flowers diminish.
+Blue Ternate
+Whole flower edible. Harvest individual flowers as they open. Perennial — continuous production. High CDO cafe market demand for color-changing teas.
+Globe Amaranth
+Whole clover-like bract edible. Drought tolerant — performs through dry season when others need more water.
+Edible Parts — All
+Sweet William and Marigold: petals only. Torenia, Blue Ternate, Globe Amaranth: whole flower.
+Post-Harvest Storage
+Rigid clamshell containers lined with barely damp paper towels at 4 degrees C. Maximum shelf life 2-4 days in tropical humidity. Sweet William: keep away from ripening fruit — ethylene-sensitive — shelf life 4-10 days if cold chain maintained.
+🚫 Rainy Season: Covered production (greenhouse or UV plastic high tunnels) REQUIRED for edible-grade Sweet William and Marigold. Open-field exposure = 0% marketable yield for culinary sector.
+ℹ Food Safety: All edible flowers must be grown far from pesticide spray drift of conventional corn or sugarcane operations common in the broader Bukidnon landscape.
+6. Monitoring Checklist Framework
+All checklists follow the three-frequency structure: Daily Scan (5 questions universal), Weekly Full Check (5-6 sections crop-aware), and Triggered Check (relevant section only). The crop-aware questions below supplement the universal daily scan for weekly checks.
+6.1 Universal Daily Scan — All Crops All Stages
+Question #
+Question
+Flag Trigger
+1
+Overall appearance — any sudden or noticeable change since yesterday? Yes or No
+Yes = prompt triggered check or schedule weekly check
+2
+Soil or medium moisture? Too wet, Good, or Too dry
+Too wet for Rosemary, Thyme, Tarragon, Strawberry = HIGH PRIORITY. Too dry for Mint = HIGH PRIORITY.
+3
+Any visible pest activity or new damage? Yes or No
+Yes = load pest section of triggered check
+4
+Any collapsed, wilting, or dead plants or pots? Yes or No
+Yes = load full triggered check immediately
+5
+Anything unusual worth noting? Free text optional
+System logs note against plot or tray record
+6.2 Nursery Environmental Flags — Asked Once Per Session
+Question
+Options
+Flag
+Current humidity feel?
+Very humid, Normal, Dry
+Very humid = activate downy mildew and Botrytis preventive alerts
+Temperature during the day?
+Very hot, Normal, Cool
+Very hot above 32C = heat stress flag for basil seedlings
+Is there adequate airflow or is it stuffy?
+Good airflow, Stuffy
+Stuffy = flag all fungal disease risk as elevated
+Any recent heavy rain affecting nursery area?
+Yes, No
+Yes = activate Phytophthora and damping off alerts for all trays
+Light conditions?
+Full sun, Partial shade, Too shaded
+Too shaded = etiolation flag for basil and brassica trays
+6.3 Basil Plot Checklist — Stage 2 Vegetative (Full Example)
+This is the fully detailed checklist for the most complex stage. Other crops follow the same 5-section structure with crop-specific symptoms substituted.
+Section 1 — General Plant Health
+Question
+Options
+Flag
+Overall plant vigor?
+Excellent, Good, Average, Poor
+Poor = triggered check immediately
+Growth even across bed or some plants noticeably stunted?
+Even, Some stunting, Significant stunting
+Stunting = nutrient or disease check
+Are plants bushy and branching or growing tall and leggy?
+Bushy, Slightly leggy, Very leggy
+Leggy = light or nitrogen imbalance flag
+Any plants started bolting — flower buds appearing?
+No, A few, About half, Most of bed
+Any bolting = harvest task generated immediately
+Section 2 — Leaf Condition
+Observation
+Flag Triggered
+Recommendation Record
+Overall color: Deep green, Normal green, Pale green, Yellowish, Purplish
+Pale or yellow = nutrient check. Purplish = phosphorus lockout flag.
+N-001, N-002
+Yellowing lower older leaves — uniform whole leaf
+Nitrogen deficiency flag
+N-001
+Yellow edges with green center — marginal only
+Potassium deficiency flag
+N-003
+Yellowing between veins — veins stay green — older leaves
+Magnesium deficiency flag
+Placeholder N-006
+Purple or reddish underside — older leaves
+Phosphorus lockout flag
+N-002
+Pale or bleached new growth tips
+Iron deficiency flag — check if over-limed
+Placeholder N-007
+Brown crispy leaf edges
+Fertilizer burn or heat stress flag
+N-004, N-005
+Leaves curling upward
+Heat stress or aphid damage flag
+Placeholder P-002
+Leaves curling downward
+Overwatering or pest flag
+Placeholder E-004, P-002
+Small brown or black spots
+Fungal disease flag
+Placeholder D-002
+White powdery coating
+Powdery mildew flag
+Placeholder D-003
+Sticky residue on leaves
+Aphid or whitefly flag — food safety concern
+Placeholder P-002, P-004
+Section 3 — Pest and Damage — Location First
+Location Selected
+Follow-up Question
+Likely Flag
+New growth or tips
+Distorted, curled, or bunched together?
+Aphid colony flag — P-002
+New growth or tips
+Sticky residue present?
+Aphid or whitefly honeydew — food safety flag
+Upper leaf surface
+Tiny pale stippling or silvery streaking?
+Thrips or spider mite — P-003 or P-005
+Upper leaf surface
+Irregular holes with ragged edges?
+Caterpillar or grasshopper — P-006
+Upper leaf surface
+Black sooty coating?
+Sooty mold from aphid honeydew — treat aphids first
+Leaf underside
+Tiny moving dots — green, red, or brown?
+Spider mite — P-003
+Leaf underside
+Small soft-bodied clustered insects?
+Aphid — P-002
+Leaf underside
+Tiny white insects flying up when disturbed?
+Whitefly — P-004
+Leaf underside
+Fine webbing present?
+Spider mite moderate to severe — P-003
+Leaf underside
+White powdery coating?
+Powdery mildew — D-003
+Stems
+Lesions or darkened sunken areas?
+Fungal or bacterial — D-002
+Base of plant or soil level
+Stem darkened or constricted at soil level?
+Root rot or Fusarium — D-004
+Base of plant or soil level
+Slime trails near base?
+Slug or snail — P-007
+Base of plant or soil level
+Tiny insects on soil surface or flying when disturbed?
+Fungus gnat — P-001
+Section 4 — Soil and Root Zone
+Question
+Options
+Flag
+Soil moisture feel?
+Waterlogged, Very wet, Moist, Dry, Very dry
+Waterlogged = root stress flag. Very dry = irrigation task.
+How long since last watering?
+Today, Yesterday, 2-3 days ago, More than 3 days
+Cross-reference with moisture flag
+Water draining normally or pooling after watering?
+Normal drainage, Slight pooling, Significant pooling
+Pooling = drainage issue flag — recommend CRH amendment
+Any foul or sour smell from soil?
+No, Slight, Strong
+Strong = anaerobic conditions or root rot flag
+Any white fluffy growth on soil surface?
+No, Small area, Widespread
+Present = fungal flag — reduce moisture, improve airflow
+Section 5 — Environmental Flags
+Question
+Options
+Flag
+Weather last 7 days?
+Normal, Unusually hot, Very rainy, Unusually dry, Mixed
+Very rainy = downy mildew preventive alert. Unusually hot = heat stress check.
+Any prolonged direct midday sun exposure?
+No, Some, Significant
+Significant = heat stress and fertilizer burn risk elevated
+Any physical damage from wind or rain impact on leaves?
+No, Minor, Significant
+Significant = open wounds increase fungal infection risk
+Any recent nearby spraying or chemical drift?
+No, Possible, Confirmed
+Confirmed = chemical contamination flag — edible safety concern
+Any changes to watering schedule or volume recently?
+No change, Increased, Decreased
+Changed = cross-reference with moisture and nutrient flags
+7. Recommendation Database — Completed Records
+7.1 Downy Mildew — 3 Records
+Record DM-001 — Preventive Alert
+Field
+Detail
+Record ID
+DM-001
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+All stages
+Check Type
+Preventive — auto-generated without checklist input
+Severity
+Low — Preventive
+Trigger Conditions
+Rainy season active OR cloudy days 2 or more consecutive AND last potassium bicarbonate application 7 or more days ago
+Issue
+Downy Mildew Preventive Protocol — Peronospora belbahrii
+Cause Explanation
+Downy mildew thrives in cool humid low-light conditions. Cloudy and rainy weather creates perfect spore germination environment. Semi-clay soil retains moisture longer than sandy soil elevating humidity at plant level. Enclosed nursery concentrates humidity around all trays simultaneously. Preventive action is critical before visible symptoms appear.
+Action Steps
+Step 1: Apply potassium bicarbonate spray as preventive coat on all active basil trays and beds. Mix at 4g per 1 liter (1 teaspoon per liter). Step 2: Spray thoroughly covering upper and lower leaf surfaces until runoff. Step 3: Apply in early morning so leaves dry before evening — wet leaves overnight dramatically increases infection risk. Step 4: Delay any foliar treatment if morning fog is present — wait until midday when leaf cuticle is fully dry.
+Follow-up
+Reapply every 5-7 days while cloudy or rainy conditions persist. Improve airflow by spacing trays further apart where possible. Avoid overhead watering — water at soil level only.
+Withholding Period
+Zero days — potassium bicarbonate safe right up to harvest
+Product
+Potassium Bicarbonate — 4g per liter
+Variety Flag
+No variety-specific differences at preventive stage
+Record DM-002 — Stage 1 Detection
+Field
+Detail
+Record ID
+DM-002
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+All stages
+Check Type
+Daily or Weekly
+Severity
+Medium — Act today
+Trigger Conditions
+Pale yellow patches on upper leaf surface AND leaf underside appears clean or slightly discolored AND no visible sporulation yet
+Issue
+Downy Mildew Stage 1 — Early Detection
+Cause Explanation
+Pale yellowing on upper leaf surface is caused by the pathogen colonizing leaf tissue from the underside, disrupting chlorophyll production. At this stage sporulation has not yet appeared meaning the infection is still contained within the leaf tissue and has not begun releasing airborne spores. This is the most treatable stage. Acting now prevents the exponential spread that happens once sporulation begins. Lemon Basil progresses from Stage 1 to Stage 2 within 3-4 days due to thinner leaf tissue — escalate faster for this variety.
+Action Steps
+Step 1: Remove all affected plants immediately. Do not compost — bag and dispose away from the farm. Downy mildew spores survive in plant debris. Step 2: Inspect all neighboring trays and beds within 1 meter of the affected plant. Check leaf undersides specifically for any gray-purple discoloration. Step 3: Apply potassium bicarbonate spray on all remaining plants in the affected area and all neighboring trays and beds. Mix at 4g per 1 liter. Cover upper and lower leaf surfaces thoroughly. Step 4: Improve airflow immediately. Space trays apart. Remove any overhead covering trapping humidity if possible. Step 5: Switch to soil-level watering only — no overhead watering.
+Follow-up
+Day 3: Inspect all treated plants. Any new yellowing patches? If yes escalate to DM-003. Day 5: Reapply potassium bicarbonate if conditions remain cloudy or humid. Day 7: Full weekly checklist on all affected and neighboring beds.
+Withholding Period
+Zero days — safe to harvest unaffected plants from same bed after thorough washing
+Product
+Potassium Bicarbonate — 4g per liter
+Variety Flag
+Lemon Basil: Escalate to DM-003 protocol faster — 2-day window before sporulation versus 4 days for Sweet Basil
+Record DM-003 — Stage 2 Detection
+Field
+Detail
+Record ID
+DM-003
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+All stages
+Check Type
+Weekly or Triggered
+Severity
+High — Act immediately, treat farm-wide
+Trigger Conditions
+Gray-purple fuzzy sporulation confirmed on leaf underside OR multiple plants affected with spread confirmed across bed or multiple trays OR Stage 1 treatment applied but new infections appearing within 3 days
+Issue
+Downy Mildew Stage 2 — Active Sporulation
+Cause Explanation
+Sporulation has begun. The pathogen has completed its initial infection cycle and is now actively producing and releasing airborne spores into the farm environment. Each sporulating lesion can release thousands of spores spreading to neighboring plants through air movement and water splash. The enclosed nursery environment and semi-clay soil moisture retention make escalation rapid under rainy or cloudy conditions. Potassium bicarbonate alone is no longer sufficient — systemic fungicide is needed to stop internal pathogen progression while potassium bicarbonate manages surface spore load.
+Action Steps
+Step 1: Remove and destroy all visibly affected plants immediately. Do not delay — every hour of sporulation means more spores in the farm environment. Step 2: Conduct emergency inspection of every active basil tray and bed on the farm regardless of distance from original detection. Downy mildew spores travel by air. Step 3: Apply systemic fungicide on all remaining basil plants farm-wide. Follow label rate precisely — reduce rate for Lemon Basil to prevent burn. Check withholding period against current harvest schedule before applying. Step 4: Apply potassium bicarbonate spray 24 hours after fungicide to address surface spore load. Do not mix together — apply separately. Step 5: Suspend overhead watering completely. Water at soil level only until outbreak is controlled. Step 6: If nursery trays affected, isolate entire nursery from bed area to prevent cross-contamination.
+Follow-up
+Day 2: Apply potassium bicarbonate as follow-up surface treatment. Day 3: Inspect all plants — any new sporulation on previously clean plants? Day 5: Reapply fungicide if new infections still appearing. Day 7: Full farm-wide weekly checklist. Day 14: If controlled, return to DM-001 preventive protocol.
+Withholding Period
+Check specific fungicide label. Do not harvest from treated beds until withholding period complete. Harvest from untreated beds safe if no symptoms.
+Product
+Systemic Fungicide (check label) followed by Potassium Bicarbonate 4g per liter 24 hours later
+Variety Flag
+Lemon Basil: Reduce fungicide rate to avoid burn. Monitor for burn symptoms 24 hours after application.
+7.2 Nutrient Deficiency Records — 5 Records
+Record N-001 — Nitrogen Deficiency
+Field
+Detail
+Record ID
+N-001
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+Vegetative and Mature
+Severity
+Medium
+Trigger Conditions
+Yellowing present AND location = lower older leaves AND pattern = uniform whole leaf yellowing not between veins AND one of: days since last urea 10 or more days, soil waterlogged 3 or more consecutive days, recent heavy rain period
+Issue
+Nitrogen Deficiency
+Cause Explanation
+Nitrogen is a mobile nutrient — the plant moves it from older lower leaves to newer growth when supply is insufficient. This is why yellowing always appears on lower older leaves first. On your farm two conditions cause deficiency even with weekly urea. First: prolonged waterlogging in semi-clay creates anaerobic conditions blocking nitrogen uptake regardless of soil urea levels. Second: heavy rain leaches water-soluble urea out of the root zone faster than roots absorb it. Cow manure and vermicast provide background organic nitrogen but cannot compensate quickly during peak vegetative demand.
+Action Steps
+Step 1: Confirm soil moisture. If waterlogged do not apply urea yet — it will not be absorbed and will leach. Improve drainage first and wait until soil returns to moist. Step 2: If soil moisture is normal apply urea drench immediately at 5g per liter of water. Apply evenly at soil level — avoid direct contact with leaves. Step 3: For faster recovery apply foliar urea at 2g per liter in early morning sprayed directly on leaves. Rinse leaves with plain water 30 minutes after foliar application. Step 4: Review watering schedule if waterlogging contributed.
+Follow-up
+Day 3: Yellowing should stabilize. New growth should appear healthy green. Day 5: If no improvement check soil pH — high or low pH locks out nitrogen. Ideal pH for basil is 6.0-7.0. Day 7: Resume normal weekly urea schedule if recovery confirmed.
+Withholding Period
+Zero days — rinse harvested leaves thoroughly
+Product
+Urea 46-0-0 at 5g per liter drench or 2g per liter foliar
+Variety Flag
+Lemon Basil: Reduce drench to 3g per liter, foliar to 1.5g per liter maximum to prevent burn
+Record N-002 — Phosphorus Lockout
+Field
+Detail
+Record ID
+N-002
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+Seedling and Vegetative
+Severity
+Medium
+Trigger Conditions
+Leaf underside or overall color = purplish or reddish tinge AND growth stunted or slower than expected AND one of: soil pH suspected low, recent cold or cool period, waterlogged soil history, complete fertilizer applied but no improvement in 7 or more days
+Issue
+Phosphorus Lockout
+Cause Explanation
+Phosphorus lockout means phosphorus is present in the soil but the plant cannot access it. Bukidnon Adtuyon clay has natural acidity at pH 4.8-5.6. At pH below 6.0 phosphorus binds tightly to clay and iron particles becoming chemically unavailable to roots regardless of how much complete fertilizer is applied. Cool temperatures also slow root metabolic activity making phosphorus absorption difficult. The characteristic purple or reddish coloring on leaf undersides occurs as the plant accumulates sugars it cannot process without adequate phosphorus.
+Action Steps
+Step 1: Check soil pH if possible. Target range for basil is 6.0-7.0. Step 2: If pH below 6.0 apply agricultural lime or dolomite lime at bed edges without disturbing roots. Water in thoroughly. pH correction takes 1-2 weeks. Step 3: If pH is normal apply foliar complete fertilizer at half normal rate. Bypasses soil chemistry problem. Step 4: Improve drainage if waterlogging contributed — add CRH to bed surface top layer.
+Follow-up
+Day 7: Check for new growth color. Healthy new green leaves emerging is positive even if older leaves remain purple. Day 14: Recheck pH if lime applied. Day 21: Full weekly checklist to confirm recovery.
+Withholding Period
+Zero days
+Product
+Agricultural Lime or Dolomite Lime for pH correction. Complete Fertilizer 14-14-14 foliar at half rate.
+Variety Flag
+Thai Basil: Natural purple pigmentation on stems and edges — use stunted growth and small internode spacing as primary indicator rather than color alone
+Record N-003 — Potassium Deficiency
+Field
+Detail
+Record ID
+N-003
+Crop
+Sweet Basil, Lemon Basil, Thai Basil
+Growth Stage
+Vegetative and Mature
+Severity
+Medium
+Trigger Conditions
+Leaf edges or margins = yellowing or browning while center of leaf remains green AND affected leaves = middle to older leaves AND one of: exclusive urea without complete fertilizer for 3 or more weeks, recent heavy rain, repeated heavy harvest history
+Issue
+Potassium Deficiency
+Cause Explanation
+Potassium is a mobile nutrient responsible for water regulation, disease resistance, and structural integrity. Deficiency appears on older leaves first as the plant redirects potassium to new growth. The characteristic marginal chlorosis — scorched or yellowed leaf edges while center stays green — clearly distinguishes this from nitrogen deficiency which causes uniform whole-leaf yellowing. Most likely if urea has been applied exclusively without complete fertilizer for several weeks. Repeated heavy harvests deplete potassium faster than organic amendments can replace it.
+Action Steps
+Step 1: Apply complete fertilizer drench immediately to replenish potassium and phosphorus alongside nitrogen. Step 2: If moderate to severe supplement with potassium sulfate foliar spray at 3-5g per liter applied in early morning. Step 3: Review fertilizer rotation — reintroduce complete fertilizer on alternating weeks going forward. Step 4: After heavy harvests apply complete fertilizer within 2 days of cutting.
+Follow-up
+Day 5: Existing affected leaves will not recover but new growth should emerge without marginal symptoms. Day 7: Reapply complete fertilizer if moderate to severe. Day 14: Full checklist to confirm new growth is healthy.
+Withholding Period
+Zero days — rinse leaves thoroughly before sale
+Product
+Complete Fertilizer 14-14-14 at standard label rate. Potassium Sulfate foliar at 3-5g per liter.
+Variety Flag
+Lemon Basil: Distinguish from fertilizer burn — potassium deficiency confined strictly to leaf margins, develops gradually over days. Burn appears within 48 hours of application on broader leaf area.
+Record N-004 — Fertilizer Burn General
+Field
+Detail
+Record ID
+N-004
+Crop
+Sweet Basil, Thai Basil
+Growth Stage
+All stages
+Severity
+Medium
+Trigger Conditions
+Crispy brown or scorched patches on leaf surface or edges AND damage appeared within 1-3 days of fertilizer application AND one of: rate higher than normal, fertilizer contacted leaves during drench, applied during peak heat hours, soil was very dry at application
+Issue
+Fertilizer Burn
+Cause Explanation
+Fertilizer burn occurs when concentrated fertilizer salts contact plant tissue or when excessive soil fertilizer concentration draws water out of roots through osmosis. Most common causes on your farm: applying urea drench too close to stem base causing splash on lower leaves, applying during midday heat, or applying to very dry soil which concentrates the fertilizer solution around the root zone. Burn damage appears rapidly within 24-48 hours — the clearest timing indicator distinguishing it from other leaf damage.
+Action Steps
+Step 1: Water the bed thoroughly and immediately with plain water — at least double normal watering volume — to dilute fertilizer salt concentration. Step 2: If fertilizer contacted leaves directly rinse entire plant gently with plain water. Step 3: Do not apply additional fertilizer for 5-7 days. Step 4: Remove severely burned leaves if more than 50% of leaf surface is damaged. Step 5: Provide shade if burn occurred during a hot period.
+Prevention
+Always water bed before applying fertilizer drench — moist soil dilutes solution evenly. Apply fertilizer in early morning or late afternoon only — never midday. Direct drench at soil level between plants — never over leaves. Maintain 5g per liter maximum for Sweet and Thai Basil.
+Follow-up
+Day 2: Burned tissue will not recover but new growth should be unaffected. Day 5: Resume normal fertilizer schedule at standard rate with correct technique. Day 7: Full weekly checklist.
+Withholding Period
+Zero days — unaffected portions safe to harvest after thorough washing
+Product
+Flush with water — no product applied as treatment
+Record N-005 — Fertilizer Burn Lemon Basil
+Field
+Detail
+Record ID
+N-005
+Crop
+Lemon Basil ONLY
+Growth Stage
+All stages
+Severity
+High
+Trigger Conditions
+Same as N-004 AND variety confirmed as Lemon Basil AND damage appears more rapidly or extensively than expected for the application rate used
+Issue
+Fertilizer Burn — Lemon Basil Specific
+Cause Explanation
+Lemon Basil has significantly thinner and more delicate leaf tissue than Sweet or Thai Basil making it disproportionately sensitive to fertilizer salts. Burn can occur at rates completely safe for other varieties. The thinner cuticle provides less protection against chemical contact damage. Lemon Basil lighter green color means burn damage is more visually obvious and progresses faster to unmarketable leaves. On weekly urea schedule Lemon Basil requires reduced rates at all times regardless of growth stage.
+Recommended Rates
+Urea drench: maximum 3g per liter (vs 5g for Sweet and Thai). Urea foliar: maximum 1.5g per liter (vs 2g for others). Complete fertilizer drench: maximum 70% of label rate. Apply in early morning ONLY — never afternoon even in mild weather.
+Action Steps
+Step 1: Flush with plain water immediately and generously — more urgently than N-004. Step 2: Remove all visibly burned leaves — Lemon Basil burned leaves do not recover and affect whole plant marketability quickly. Step 3: Apply vermicast tea drench — 1 cup vermicast steeped in 5 liters water for 24 hours — as gentle recovery support without burn risk. Step 4: Do not apply any synthetic fertilizer for minimum 7 days after burn event.
+Follow-up
+Day 3: Assess new growth emergence. Lemon Basil recovers faster than Sweet Basil from moderate burn if flushed quickly. Day 7: Resume at reduced Lemon Basil rates only. Day 14: Full weekly checklist.
+Withholding Period
+Zero days — unaffected portions safe after washing
+System Flag
+Lemon Basil beds and pots should display a persistent reduced-rate fertilizer reminder every time a fertilizer application is logged for this variety
+8. Recommendation Database — Placeholder Sections
+The following sections are to be completed using the same format as Section 7. Each record requires: Record ID, Crop, Growth Stage, Check Type, Severity, Trigger Conditions, Issue, Cause Explanation, Action Steps, Follow-up Schedule, Withholding Period, Product Reference, and Variety Flag where applicable.
+8.1 Pest Records — To Complete
+Record ID
+Issue
+Crops Affected
+Priority
+P-001
+Fungus Gnats
+All crops with organic-rich medium — especially vermicast and cow manure mixes
+High — likely ongoing due to soil composition
+P-002
+Aphids
+All crops — confirmed farm history
+High — confirmed on farm
+P-003
+Spider Mites
+All crops — dry season peak Dec-May
+High
+P-004
+Whitefly
+Stevia, Basil, Brassicas
+Medium
+P-005
+Thrips
+All crops — edible flowers especially
+High — food safety implications
+P-006
+Caterpillars and Cutworms
+Basil, Brassicas, Stevia — confirmed worm history on farm
+High — confirmed on farm
+P-007
+Slugs and Snails
+All ground-level crops during rainy season
+Medium
+P-008
+Leafminers
+Basil, Parsley
+Medium
+P-009
+Flea Beetles
+Mints, Basil, Brassicas
+Medium
+P-010
+Spittlebugs
+Rosemary specific
+Low — crop-specific
+P-011
+Scale Insects
+Globe Amaranth, Blue Ternate
+Low
+8.2 Disease Records — To Complete
+Record ID
+Issue
+Crops Affected
+Priority
+D-001
+Damping Off
+All seedling trays — seeds and cuttings
+Critical — tray stage loss prevention
+D-002
+Fusarium Wilt
+Basil — all varieties
+High — soil-borne, permanent bed impact
+D-003
+Powdery Mildew
+Mints, Basil, Edible Flowers
+High
+D-004
+Root Rot — General
+All potted crops
+High
+D-005
+Phytophthora Root Rot
+Rosemary, Thyme, French Tarragon, Strawberry
+Critical — no cure
+D-006
+Mint Rust
+Peppermint and Spearmint
+High — incurable, remove and destroy
+D-007
+Botrytis Blight
+Parsley, Edible Flowers, Strawberry
+High — food safety for edible flowers
+D-008
+Septoria Leaf Spot
+Parsley, Stevia
+Medium
+D-009
+Bacterial Soft Rot
+Brassicas — Pechay, Pakchoi, Mustasa
+High — rainy season risk
+D-010
+Clubroot
+Brassicas only
+Critical — permanent bed quarantine if detected
+D-011
+Anthracnose
+Strawberry
+High — fruit quality loss
+D-012
+White Mold
+Stevia, Globe Amaranth
+Medium
+8.3 Environmental Records — To Complete
+Record ID
+Issue
+Trigger
+Priority
+E-001
+Bolting Management
+Flower buds detected on basil — any stage
+High — harvest quality directly affected
+E-002
+Heat Stress
+Temperature above 32 degrees C during transplanting or active growth
+Medium
+E-003
+Overwatering
+Soil waterlogged 2 or more consecutive days
+High — root rot precursor
+E-004
+Underwatering
+Soil very dry — especially critical for Mints and Parsley
+Medium
+E-005
+Poor Drainage
+Water pooling after irrigation — raised bed or pot
+High — disease precursor for all crops
+E-006
+Edema
+Fog morning + high humidity + Parsley
+Low — physiological disorder not disease
+8.4 Pot-Specific Records — To Complete
+All records above apply to beds and pots. Additional pot-specific records needed:
+Record ID
+Issue
+Crops Affected
+Priority
+PT-001
+Pot Bound Root Congestion
+Mints especially — aggressive rhizome growth
+High — Mints need annual repotting
+PT-002
+Nutrient Depletion in Confined Volume
+All potted crops — faster than beds
+High — pots deplete faster than open beds
+PT-003
+Salt Accumulation
+All potted crops with regular fertilizer applications
+Medium — annual substrate refresh
+PT-004
+Drainage Hole Obstruction
+All potted crops — sediment blocking drainage
+High — causes hypoxia in roots
+9. Crop Rotation Matrix — Raised Bed Crops
+Applies to Sweet Basil, Lemon Basil, Pechay, Pakchoi, and Mustasa in open ground raised beds. Potted crops do not rotate — substrate is refreshed annually instead.
+Previous Crop
+Plant Family
+Avoid Next
+Recommended Next
+Rest Days
+Amendments
+Sweet Basil
+Lamiaceae
+Any Lamiaceae — prevents Fusarium accumulation
+Legumes (beans, peas) for nitrogen restoration. Alliums for disease cycle break.
+14-21 days
+50g lime per sqm + 2 liters CRH per sqm
+Lemon Basil
+Lamiaceae
+Any Lamiaceae
+Legumes or Alliums
+14-21 days
+50g lime per sqm + 2 liters CRH per sqm
+Pechay
+Brassicaceae
+Any Brassicaceae — prevents Clubroot and Webworm
+Solanaceous crops (tomatoes, eggplants) or Alliums
+21 days minimum
+100g lime per sqm to suppress Plasmodiophora
+Pakchoi
+Brassicaceae
+Any Brassicaceae
+Solanaceous or Alliums
+21 days minimum
+100g lime per sqm
+Mustasa
+Brassicaceae
+Any Brassicaceae
+Solanaceous or Alliums
+21 days minimum
+100g lime per sqm
+Rotation between current Elgreensyde crops: Basil varieties followed by Pechay, Pakchoi, or Mustasa is the simplest safe rotation. Avoid Basil after Basil without at least one brassica or non-Lamiaceae cycle in between.
+10. Crop Library CSV Import Template
+Use this template to add new crops without rebuilding the Crop Library module. Download the template from the system, populate from Gemini Deep Research results, and import via the Crop Library module.
+Column Name
+Data Type
+Required
+Example Value
+Notes
+crop_id
+VARCHAR
+Auto-generated
+CRP-BSL-SW
+System generates on import
+crop_name
+VARCHAR
+Yes
+Sweet Basil
+Common name
+scientific_name
+VARCHAR
+Yes
+Ocimum basilicum
+Scientific name
+family
+VARCHAR
+Yes
+Lamiaceae
+Plant family
+growth_type
+ENUM
+Yes
+Cut and come again
+Cut and come again, Single harvest, Perennial, or Annual
+format
+ENUM
+Yes
+Both
+Bulk grams, Units pots, or Both
+avg_nursery_days
+INTEGER
+Yes
+14
+Days in tray before transplant ready
+days_to_first_harvest
+INTEGER
+Yes
+35
+Days from transplant to first harvest
+harvest_interval_days
+INTEGER
+Yes
+10
+Days between cuts — cut and come again only
+plot_lifespan_days
+INTEGER
+Yes
+70
+Expected productive days
+resting_days
+INTEGER
+Yes
+14
+Minimum rest days between crop cycles
+spacing_cm
+VARCHAR
+Yes
+25x30cm
+Format: between plants x between rows
+plants_per_sqm
+DECIMAL
+Yes
+13
+Calculated from spacing
+min_bed_depth_cm
+INTEGER
+If raised bed crop
+25
+Minimum depth in cm
+mound_height_cm
+INTEGER
+If raised bed crop
+30
+Recommended mound height
+pot_diameter_cm
+INTEGER
+If potted crop
+20
+Minimum pot diameter
+pot_depth_cm
+INTEGER
+If potted crop
+20
+Minimum pot depth
+pot_material
+VARCHAR
+If potted crop
+Terracotta
+Recommended pot material
+soil_mix_id
+VARCHAR
+Yes
+Mix A
+References soil mix specification from Section 4
+cow_manure_excluded
+BOOLEAN
+Yes
+FALSE
+TRUE for Rosemary, Thyme, French Tarragon
+rotation_family
+VARCHAR
+If raised bed
+Lamiaceae
+For rotation conflict checking
+avoid_after
+VARCHAR
+If raised bed
+Lamiaceae
+Comma-separated family names to avoid
+recommended_after
+VARCHAR
+If raised bed
+Brassicaceae,Fabaceae
+Comma-separated recommended successors
+pesticide_free_required
+BOOLEAN
+Yes
+FALSE
+TRUE for all edible flower crops
+high_risk_flag
+VARCHAR
+If applicable
+Phytophthora — no cure
+Brief risk description for dashboard warning
+yield_per_sqm_min
+DECIMAL
+If raised bed
+1.5
+Minimum kg per sqm
+yield_per_sqm_max
+DECIMAL
+If raised bed
+2.0
+Maximum kg per sqm
+yield_per_pot_min
+DECIMAL
+If potted
+100
+Minimum grams per pot per cycle
+yield_per_pot_max
+DECIMAL
+If potted
+200
+Maximum grams per pot per cycle
+notes
+TEXT
+No
+—
+Any additional agronomic notes
+ℹ Pest records, disease records, nutrient records, checklist questions, fertilizer schedules, and weather thresholds are added as separate linked records after the base crop record is created. The CSV import handles the crop_library base table only.
+End of Document 2 of 2
+Elgreensyde Farm Management System | Valencia City, Bukidnon, Philippines
