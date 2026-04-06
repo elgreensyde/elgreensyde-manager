@@ -410,7 +410,7 @@ function Batches() {
                if (tray.status === 'Completed' || tray.status === 'Transplanted') badgeColor = 'bg-green-500/20 text-green-400 opacity-50';
 
                return (
-                <div key={tray.tray_id || tray.id} className="glass-card p-4 group">
+                <div key={tray.tray_id || tray.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-mono text-gray-400">{tray.tray_code}</span>
@@ -458,7 +458,7 @@ function Batches() {
                const totalYield = plotHarvests.reduce((sum, h) => sum + parseFloat(h.yield_weight_g || 0), 0);
 
                return (
-                <div key={plot.plot_id || plot.id} className="glass-card p-4 group">
+                <div key={plot.plot_id || plot.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-mono text-gray-400">{plot.plot_code}</span>
@@ -503,7 +503,7 @@ function Batches() {
             ) : filteredBatches.map(batch => {
                const crop = getCrop(batch.crop_id);
                return (
-                <div key={batch.batch_id || batch.id} className={`glass-card p-4 group ${batch.status === 'Completed' ? 'opacity-50' : ''}`}>
+                <div key={batch.batch_id || batch.id} className={`glass-card p-4 group select-none active:bg-black/5 transition-colors ${batch.status === 'Completed' ? 'opacity-50' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-mono text-gray-400">{batch.batch_code}</span>

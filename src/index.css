@@ -276,3 +276,27 @@ select.input-field {
   background-size: 1.5em 1.5em;
   padding-right: 2.5rem;
 }
+/* Mobile UI/UX Master Patch */
+.bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.print-fab {
+  position: fixed !important;
+  bottom: 80px !important;
+  right: 16px !important;
+  z-index: 40;
+}
+
+[data-theme="dark"] .away-mode-btn {
+  background-color: rgba(18, 40, 28, 0.92) !important;
+  color: #a78bfa !important;
+  border: 1px solid #6d28d9 !important;
+}
+
+.select-none {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}

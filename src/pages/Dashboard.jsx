@@ -169,7 +169,7 @@ function Dashboard() {
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{formatDate()}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAwayModal(true)} className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'border-indigo-500/40 text-indigo-400' : 'border-themed text-themed-muted hover:opacity-80'}`} style={{ background: 'var(--color-bg-card)' }}>
+            <button onClick={() => setShowAwayModal(true)} className={`away-mode-btn p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'border-indigo-500/40 text-indigo-400' : 'border-themed text-themed-muted hover:opacity-80'}`} style={{ background: 'var(--color-bg-card)' }}>
                <Calendar size={18} />
                <span className="text-xs font-bold">{activeAway ? 'Away Mode ON' : 'Away Mode'}</span>
             </button>
@@ -232,7 +232,7 @@ function Dashboard() {
             </div>
             <div className="space-y-2">
               {overdueTasks.map(task => (
-                <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3">
+                <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3 select-none">
                   <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-red-500 truncate">{task.title}</p>
@@ -259,7 +259,7 @@ function Dashboard() {
           ) : (
             <div className="space-y-2">
               {todayTasks.map(task => (
-                <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3">
+                <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3 select-none">
                   <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{task.title}</p>
@@ -477,7 +477,7 @@ function Dashboard() {
         onClick={generatePDF} 
         disabled={generatingPDF} 
         style={{ bottom: 'calc(68px + env(safe-area-inset-bottom, 0px))' }}
-        className="fixed right-5 w-12 h-12 rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 no-print"
+        className="print-fab fixed right-5 w-12 h-12 rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 no-print"
         title="Export Daily Run Sheet PDF"
       >
         <span className="absolute inset-0 rounded-full" style={{ background: 'var(--color-bg-nav)', border: '1px solid var(--color-border)' }} />

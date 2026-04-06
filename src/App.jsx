@@ -170,7 +170,7 @@ function App() {
       )}
 
       {/* MOBILE BOTTOM NAVIGATION — with iOS/Android safe area inset */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 no-print border-t" style={{ background: 'var(--color-bg-nav)', backdropFilter: 'blur(20px)', borderColor: 'var(--color-border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <nav className="bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-30 no-print border-t" style={{ background: 'var(--color-bg-nav)', backdropFilter: 'blur(20px)', borderColor: 'var(--color-border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around max-w-lg mx-auto">
           {mainNav.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'} className="flex flex-col items-center gap-1 py-3 px-4 min-w-[64px] relative">
