@@ -464,6 +464,20 @@ function Batches() {
                       <span className="text-xs font-mono text-gray-400">{plot.plot_code}</span>
                       <h3 className="font-semibold text-gray-100">{plot.crop_id ? (crop ? crop.common_name : 'Unknown Crop') : 'Empty Bed'}</h3>
                       {plot.sowing_date && <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><Calendar size={12}/> Planted: {plot.sowing_date}</p>}
+                      {plot.sowing_date && crop?.days_to_maturity && plot.status === 'Active' && (
+                        <div className="mt-3">
+                          <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                            <span>Day {Math.floor((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24))} of {crop.days_to_maturity}</span>
+                            <span>{Math.min(100, Math.floor(((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100))}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-indigo-500 transition-all duration-1000" 
+                              style={{ width: `${Math.min(100, ((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100)}%` }} 
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                        <span className={`badge text-[10px] ${badgeColor}`}>{plot.status}</span>
@@ -509,6 +523,20 @@ function Batches() {
                       <span className="text-xs font-mono text-gray-400">{batch.batch_code}</span>
                       <h3 className="font-semibold text-gray-100">{crop ? crop.common_name : 'Unknown Crop'}</h3>
                       <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><MapPin size={12}/> {batch.propagation_method}</p>
+                      {batch.start_date && crop?.days_to_maturity && batch.status === 'Nursery' && (
+                        <div className="mt-3">
+                          <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                            <span>Day {Math.floor((new Date() - new Date(batch.start_date)) / (1000 * 60 * 60 * 24))} of {crop.days_to_maturity}</span>
+                            <span>{Math.min(100, Math.floor(((new Date() - new Date(batch.start_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100))}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-amber-500 transition-all duration-1000" 
+                              style={{ width: `${Math.min(100, ((new Date() - new Date(batch.start_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100)}%` }} 
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-2">
                        <span className={`badge text-[10px] ${batch.status === 'Nursery' ? 'bg-amber-500/20 text-amber-400' : 'bg-green-500/20 text-green-400'}`}>{batch.status}</span>

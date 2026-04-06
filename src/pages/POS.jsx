@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Check, Plus, Minus, Trash2, Receipt, FileDown, Store, Tag, X, Lock } from 'lucide-react';
+import { ShoppingCart, Check, Plus, Minus, Trash2, Receipt, FileDown, Store, Tag, X, Lock, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
 import supabase from '../lib/supabase';
@@ -188,6 +188,36 @@ function POS() {
     setShowReceiptModal(false);
   };
 
+  // ⚡ QUICK SELL (1x): One-tap sale — no cart, no modal, instant deduct + ledger write
+  const handleQuickSell = async (sku) => {
+    const price = getPrice(sku);
+    const available = getAvailable(sku);
+
+    if (price === 0) return toast.error('Set a retail price first (₱ icon).');
+    if (available <= 0) return toast.error('No available stock for this item.');
+
+    try {
+      // 1. Deduct 1 unit from inventory
+      const newStock = Math.max(0, parseFloat(sku.current_stock) - 1);
+      await db.update('inventory', sku.sku_id || sku.id, { current_stock: newStock });
+
+      // 2. Write Revenue to financial_ledger — same as handleFulfill
+      await db.insert('financial_ledger', {
+        entry_type: 'Revenue',
+        amount: price,
+        description: `⚡ Quick Sell — ${sku.product_name} (Walk-in / Cash)`,
+        order_id: null,
+        entry_date: new Date().toISOString().split('T')[0]
+      });
+
+      toast.success(`⚡ ${sku.product_name} sold for ${fmt(price)}!`);
+      load(); // Refresh stock
+    } catch (err) {
+      toast.error('Quick Sell failed. Check console.');
+      console.error(err);
+    }
+  };
+
   const openHistory = async () => {
     const logs = await db.getAll('financial_ledger');
     if (logs) {
@@ -304,6 +334,16 @@ function POS() {
                     >
                       <Tag size={12}/>
                     </button>
+                    {/* ⚡ Quick Sell (1x) — Units only, bypasses cart */}
+                    {sku.sales_format === 'Units' && !isOutOfStock && price > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleQuickSell(sku); }}
+                        className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-emerald-500/40 active:scale-90"
+                        title={`Quick Sell 1x for ${fmt(price)}`}
+                      >
+                        <Zap size={13} strokeWidth={2.5} />
+                      </button>
+                    )}
                   </div>
                 );
               })}

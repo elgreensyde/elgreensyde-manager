@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, CalendarDays, Beaker, Users, ChevronRight, Sun, Moon, FlaskConical, ScanEye, ClipboardList, Target } from 'lucide-react';
+import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, Beaker, ChevronRight, Sun, Moon, ScanEye, ClipboardList, Target, Zap } from 'lucide-react';
 import { useTheme } from './contexts/ThemeContext';
 import { initializeSeedData } from './services/seedData';
 import Dashboard from './pages/Dashboard';
@@ -10,10 +10,7 @@ import Tasks from './pages/Tasks';
 import POS from './pages/POS';
 import Inventory from './pages/Inventory';
 import Finance from './pages/Finance';
-import PlantingCalendar from './pages/PlantingCalendar';
 import Maintenance from './pages/Maintenance';
-import Customers from './pages/Customers';
-import InputsInventory from './pages/InputsInventory';
 import Monitoring from './pages/Monitoring';
 import ReturnSummary from './pages/ReturnSummary';
 import OrderBuilder from './pages/OrderBuilder';
@@ -58,13 +55,12 @@ function App() {
 
   const moreNav = [
     { to: '/monitoring', icon: ScanEye, label: 'Farm Walk' },
+    { to: '/orders', icon: ClipboardList, label: 'Orders' },
+    { to: '/targets', icon: Target, label: 'Planting Targets' },
     { to: '/crops', icon: BookOpen, label: 'Crop Library' },
     { to: '/inventory', icon: Package, label: 'Inventory' },
-    { to: '/inputs', icon: FlaskConical, label: 'Farm Inputs' },
     { to: '/finance', icon: DollarSign, label: 'Finance' },
-    { to: '/calendar', icon: CalendarDays, label: 'Planting Calendar' },
     { to: '/maintenance', icon: Beaker, label: 'Action Logs' },
-    { to: '/customers', icon: Users, label: 'Customers' },
   ];
 
   const commerceNav = [
@@ -136,10 +132,7 @@ function App() {
           <Route path="/pos" element={<POS />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/finance" element={<Finance />} />
-          <Route path="/calendar" element={<PlantingCalendar />} />
           <Route path="/maintenance" element={<Maintenance />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/inputs" element={<InputsInventory />} />
           <Route path="/monitoring" element={<Monitoring />} />
           <Route path="/orders" element={<FulfillmentBoard />} />
           <Route path="/orders/new" element={<OrderBuilder />} />

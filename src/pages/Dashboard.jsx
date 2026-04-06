@@ -5,7 +5,7 @@ import html2canvas from 'html2canvas';
 import {
   Printer, AlertTriangle, Clock, CheckCircle2,
   Sprout, ShoppingCart, DollarSign, Lock, Package,
-  ChevronRight, Leaf, Sun, Moon, Calendar
+  ChevronRight, Leaf, Sun, Moon, Calendar, ScanEye
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -25,6 +25,7 @@ function Dashboard() {
   const [weatherBriefing, setWeatherBriefing] = useState(null);
   const [awayPeriods, setAwayPeriods] = useState([]);
   const [showAwayModal, setShowAwayModal] = useState(false);
+  const [lastScouted, setLastScouted] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -32,11 +33,12 @@ function Dashboard() {
       await generatePreventiveAlerts();
       const { default: weatherService } = await import('../services/weatherService');
       
-      const [t, b, c, i, p, h, w, away] = await Promise.all([
+      const [t, b, c, i, p, h, w, away, sessions] = await Promise.all([
         db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
         db.getAll('inventory'), db.getAll('plots'), db.getAll('harvest_logs'),
         weatherService.getForecast(),
-        db.getAll('away_periods')
+        db.getAll('away_periods'),
+        db.getAll('monitoring_sessions')
       ]);
       
       const todayStr = new Date().toISOString().split('T')[0];
@@ -58,6 +60,11 @@ function Dashboard() {
 
       setBatches(b || []); setCrops(c || []); setInventory(i || []);
       setAwayPeriods(away || []);
+      
+      if (sessions && sessions.length > 0) {
+        const latest = sessions.sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+        setLastScouted(latest.created_at || latest.started_at);
+      }
       
       if (w) {
          // Aggregate 48h briefing
@@ -166,7 +173,23 @@ function Dashboard() {
               <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-badge-herb-text)' }}>Solo Cockpit</span>
             </div>
             <h1 className="text-2xl font-display font-bold" style={{ color: 'var(--color-text-heading)' }}>{greeting()} 🌿</h1>
-            <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{formatDate()}</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{formatDate()}</p>
+              {lastScouted && (
+                <>
+                  <span style={{ color: 'var(--color-text-muted)' }}>·</span>
+                  <div className="flex items-center gap-1.5">
+                    <ScanEye size={14} className="text-themed-muted" />
+                    {(() => {
+                      const days = Math.floor((new Date() - new Date(lastScouted)) / (1000 * 60 * 60 * 24));
+                      if (days === 0) return <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">Scouted Today ✅</span>;
+                      if (days <= 3) return <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">Scouted {days}d ago ⚠️</span>;
+                      return <span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded animate-pulse">Scouted {days}d ago 🔴</span>;
+                    })()}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowAwayModal(true)} className={`away-mode-btn p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'border-indigo-500/40 text-indigo-400' : 'border-themed text-themed-muted hover:opacity-80'}`} style={{ background: 'var(--color-bg-card)' }}>
