@@ -20,11 +20,20 @@ function Tasks() {
       db.getAll('plots') || [], db.getAll('harvest_logs') || [], db.getAll('inventory') || []
     ]);
     
-    // Auto-generate passive tasks based on PRD conditions
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Auto-generate passive tasks, but guard against duplicates that Dashboard may have already written
     const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
-    if (newTasks.length > 0) {
-      await db.insertMany('tasks', newTasks);
-      // Reload newly inserted tasks
+    const trulyNew = newTasks.filter(nt =>
+      !(t || []).some(existing =>
+        existing.title === nt.title &&
+        existing.due_date === todayStr &&
+        (existing.status === 'Pending' || existing.status === 'Overdue')
+      )
+    );
+
+    if (trulyNew.length > 0) {
+      await db.insertMany('tasks', trulyNew);
       const latestTasks = await db.getAll('tasks');
       setTasks(latestTasks || []);
     } else {
@@ -92,7 +101,7 @@ function Tasks() {
           return (
             <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
               {task.status !== 'Completed' ? (
-                <button onClick={() => completeTask(task.task_id || task.id)} className={`flex-shrink-0 w-6 h-6 rounded-full border-2 mt-0.5 transition-colors ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
+                <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className={`flex-shrink-0 w-7 h-7 rounded-full border-2 mt-0.5 active:scale-90 transition-all ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
               ) : <CheckCircle2 size={20} className="text-green-500/50 flex-shrink-0 mt-0.5" />}
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through' : ''}`} style={{ color: task.status === 'Completed' ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{displayTitle}</p>
@@ -106,7 +115,7 @@ function Tasks() {
                 </div>
               </div>
               {task.status !== 'Completed' && <StatusIcon size={16} className={`${config.color} flex-shrink-0 mt-0.5`} />}
-              <button onClick={() => deleteTask(task.task_id || task.id)} className="text-red-400/40 hover:text-red-500 p-1 rounded transition-colors flex-shrink-0" title="Delete task"><X size={14} /></button>
+              <button onClick={(e) => { e.stopPropagation(); deleteTask(task.task_id || task.id); }} className="text-red-400/40 hover:text-red-500 p-2 rounded transition-colors flex-shrink-0 active:scale-90" title="Delete task"><X size={14} /></button>
             </div>
           );
         })}

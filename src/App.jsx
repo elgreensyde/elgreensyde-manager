@@ -151,7 +151,7 @@ function App() {
       {moreOpen && (
         <div className="md:hidden fixed inset-0 z-40 no-print" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'var(--color-bg-overlay)' }} />
-          <div className="absolute bottom-20 right-4 left-4 z-50 animate-slide-up" onClick={e => e.stopPropagation()}>
+          <div className="absolute right-4 left-4 z-50 animate-slide-up" style={{ bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))' }} onClick={e => e.stopPropagation()}>
             <div className="glass-card-static p-2" style={{ borderColor: 'var(--color-border)' }}>
               <div className="px-3 py-2 mb-1 flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-themed-muted">More Modules</h3>
@@ -169,8 +169,8 @@ function App() {
         </div>
       )}
 
-      {/* MOBILE BOTTOM NAVIGATION */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 no-print border-t" style={{ background: 'var(--color-bg-nav)', backdropFilter: 'blur(20px)', borderColor: 'var(--color-border)' }}>
+      {/* MOBILE BOTTOM NAVIGATION — with iOS/Android safe area inset */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 no-print border-t" style={{ background: 'var(--color-bg-nav)', backdropFilter: 'blur(20px)', borderColor: 'var(--color-border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around max-w-lg mx-auto">
           {mainNav.map(item => (
             <NavLink key={item.to} to={item.to} end={item.to === '/'} className="flex flex-col items-center gap-1 py-3 px-4 min-w-[64px] relative">

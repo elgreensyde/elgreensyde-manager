@@ -39,9 +39,17 @@ function Dashboard() {
         db.getAll('away_periods')
       ]);
       
+      const todayStr = new Date().toISOString().split('T')[0];
       const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
-      if (newTasks.length > 0) {
-        await db.insertMany('tasks', newTasks);
+      const trulyNew = newTasks.filter(nt =>
+        !(t || []).some(existing =>
+          existing.title === nt.title &&
+          existing.due_date === todayStr &&
+          (existing.status === 'Pending' || existing.status === 'Overdue')
+        )
+      );
+      if (trulyNew.length > 0) {
+        await db.insertMany('tasks', trulyNew);
         const latestTasks = await db.getAll('tasks');
         setTasks(latestTasks || []);
       } else {
@@ -161,7 +169,7 @@ function Dashboard() {
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>{formatDate()}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAwayModal(true)} className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+            <button onClick={() => setShowAwayModal(true)} className={`p-2.5 rounded-xl border flex items-center gap-2 transition-all no-print ${activeAway ? 'border-indigo-500/40 text-indigo-400' : 'border-themed text-themed-muted hover:opacity-80'}`} style={{ background: 'var(--color-bg-card)' }}>
                <Calendar size={18} />
                <span className="text-xs font-bold">{activeAway ? 'Away Mode ON' : 'Away Mode'}</span>
             </button>
@@ -225,7 +233,7 @@ function Dashboard() {
             <div className="space-y-2">
               {overdueTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3">
-                  <button onClick={() => completeTask(task.id)} className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 transition-colors" />
+                  <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-red-500 truncate">{task.title}</p>
                     <p className="text-xs text-red-500/60 mt-0.5">Due: {task.due_date}</p>
@@ -252,7 +260,7 @@ function Dashboard() {
             <div className="space-y-2">
               {todayTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3">
-                  <button onClick={() => completeTask(task.id)} className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 transition-colors" />
+                  <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{task.title}</p>
                     {task.priority === 'Critical' && <span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded mt-1 inline-block">CRITICAL</span>}
@@ -464,89 +472,19 @@ function Dashboard() {
         </div>
       )}
 
-      {/* FLOATING ACTION: PRINT */}
+      {/* FLOATING ACTION: PRINT — sits 84px above bottom to clear nav bar + safe area */}
       <button 
         onClick={generatePDF} 
         disabled={generatingPDF} 
-        className="fixed bottom-24 right-5 w-12 h-12 rounded-full bg-slate-800 text-white shadow-xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 no-print"
+        style={{ bottom: 'calc(68px + env(safe-area-inset-bottom, 0px))' }}
+        className="fixed right-5 w-12 h-12 rounded-full shadow-xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all z-40 no-print"
+        title="Export Daily Run Sheet PDF"
       >
-        {generatingPDF ? <div className="loading-spinner w-5 h-5 border-2" /> : <Printer size={20} />}
+        <span className="absolute inset-0 rounded-full" style={{ background: 'var(--color-bg-nav)', border: '1px solid var(--color-border)' }} />
+        <span className="relative">{generatingPDF ? <div className="loading-spinner w-5 h-5 border-2" /> : <Printer size={20} style={{ color: 'var(--color-text-muted)' }} />}</span>
       </button>
 
-      {/* PDF RUN SHEET CONTAINER (Hidden from screen) */}
-      <div id="run-sheet-pdf" style={{ display: 'none', width: '210mm', minHeight: '297mm', padding: '15mm', backgroundColor: 'white', color: 'black', fontFamily: 'sans-serif' }}>
-        <h1 style={{ fontSize: '20pt', fontWeight: 'bold', margin: '0 0 8px 0', color: '#111' }}>🌿 Elgreensyde — Daily Run Sheet</h1>
-        <p style={{ fontSize: '12pt', marginBottom: '24px', color: '#666' }}>{formatDate()}</p>
-        
-        {overdueTasks.length + todayTasks.length === 0 ? (
-          <p style={{ fontStyle: 'italic', color: '#666', marginTop: '20px' }}>No tasks due for today. The farm is caught up!</p>
-        ) : (
-          getTasksByZone().map(([zone, zoneTasks]) => (
-            <div key={zone} style={{ marginBottom: '24px' }}>
-              <div style={{ backgroundColor: '#f0fdf4', padding: '6px 12px', borderLeft: '4px solid #16a34a', marginBottom: '12px' }}>
-                <h2 style={{ fontSize: '14pt', fontWeight: 'bold', margin: '0', color: '#166534', textTransform: 'uppercase' }}>📍 {zone}</h2>
-              </div>
-              <div style={{ paddingLeft: '8px' }}>
-                {zoneTasks.map(t => {
-                  const isOverdue = t.status === 'Overdue';
-                  return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px', fontSize: '11pt' }}>
-                      <div style={{ border: `2px solid ${isOverdue ? '#ef4444' : '#6b7280'}`, width: '16px', height: '16px', borderRadius: '4px', marginRight: '12px', flexShrink: 0, marginTop: '2px' }} />
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : '#111' }}>
-                          {isOverdue && '⚠️ '}{t.title}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))
-        )}
 
-        {lowStockItems.length > 0 && (
-          <div style={{ marginTop: '30px' }}>
-            <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '10px', color: '#ef4444', borderBottom: '1px solid #ef4444', paddingBottom: '4px' }}>🔴 LOW STOCK ALERTS</h2>
-            {lowStockItems.map(i => <div key={i.sku_id || i.id} style={{ marginBottom: '6px', fontSize: '10pt' }}>• {i.product_name} — {i.current_stock} {i.sales_format} remaining</div>)}
-          </div>
-        )}
-
-        {/* EC/pH Checks Table */}
-        <div style={{ marginTop: '30px' }}>
-          <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '4px' }}>📋 EC / pH SPOT CHECKS</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10pt', marginTop: '10px' }}>
-            <thead>
-              <tr>
-                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'left', width: '30%' }}>Zone / Batch</th>
-                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center', width: '20%' }}>EC (mS/cm)</th>
-                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'center', width: '20%' }}>pH</th>
-                <th style={{ border: '1px solid #ccc', padding: '8px', textAlign: 'left', width: '30%' }}>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[1, 2, 3, 4, 5].map(i => (
-                <tr key={i}>
-                  <td style={{ border: '1px solid #ccc', padding: '8px', height: '32px' }}></td>
-                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
-                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
-                  <td style={{ border: '1px solid #ccc', padding: '8px' }}></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div style={{ marginTop: '30px' }}>
-          <h2 style={{ fontSize: '12pt', fontWeight: 'bold', marginBottom: '16px', borderBottom: '1px solid #ccc', paddingBottom: '4px' }}>📝 DAILY FIELD NOTES / SCOUTING</h2>
-          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
-          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
-          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
-          <div style={{ borderBottom: '1px dashed #ccc', height: '28px', width: '100%' }}></div>
-        </div>
-
-        <p style={{ marginTop: '40px', fontSize: '8pt', color: '#999', textAlign: 'center' }}>Elgreensyde — Purok 17 Hindangon Poblacion, Valencia City, Bukidnon</p>
-      </div>
     </div>
   );
 }
