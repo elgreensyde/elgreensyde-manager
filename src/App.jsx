@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, CalendarDays, Beaker, Users, ChevronRight, Sun, Moon, FlaskConical, ScanEye } from 'lucide-react';
+import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, CalendarDays, Beaker, Users, ChevronRight, Sun, Moon, FlaskConical, ScanEye, ClipboardList, Target } from 'lucide-react';
 import { useTheme } from './contexts/ThemeContext';
 import { initializeSeedData } from './services/seedData';
 import Dashboard from './pages/Dashboard';
@@ -16,6 +16,9 @@ import Customers from './pages/Customers';
 import InputsInventory from './pages/InputsInventory';
 import Monitoring from './pages/Monitoring';
 import ReturnSummary from './pages/ReturnSummary';
+import OrderBuilder from './pages/OrderBuilder';
+import FulfillmentBoard from './pages/FulfillmentBoard';
+import PlantingTargets from './pages/PlantingTargets';
 import { Toaster } from 'react-hot-toast';
 import awayService from './services/awayService';
 import notificationService from './services/notificationService';
@@ -64,6 +67,11 @@ function App() {
     { to: '/customers', icon: Users, label: 'Customers' },
   ];
 
+  const commerceNav = [
+    { to: '/orders', icon: ClipboardList, label: 'Orders' },
+    { to: '/targets', icon: Target, label: 'Planting Targets' },
+  ];
+
   return (
     <div className="flex h-screen bg-themed-primary overflow-hidden relative">
       {absenceInfo.requiresAcknowledgment && (
@@ -108,6 +116,13 @@ function App() {
               <item.icon size={18} /> <span>{item.label}</span>
             </NavLink>
           ))}
+
+          <p className="text-xs font-bold uppercase tracking-wider text-themed-muted px-2 mb-2 mt-8">Commerce</p>
+          {commerceNav.map(item => (
+            <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${isActive ? 'bg-forest-600/10 text-green-600 font-semibold' : 'text-themed-secondary hover:bg-black/5'}`}>
+              <item.icon size={18} /> <span>{item.label}</span>
+            </NavLink>
+          ))}
         </div>
       </aside>
 
@@ -126,6 +141,9 @@ function App() {
           <Route path="/customers" element={<Customers />} />
           <Route path="/inputs" element={<InputsInventory />} />
           <Route path="/monitoring" element={<Monitoring />} />
+          <Route path="/orders" element={<FulfillmentBoard />} />
+          <Route path="/orders/new" element={<OrderBuilder />} />
+          <Route path="/targets" element={<PlantingTargets />} />
         </Routes>
       </main>
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, Check, Plus, Minus, Trash2, Receipt, FileDown, Store, Tag, X } from 'lucide-react';
+import { ShoppingCart, Check, Plus, Minus, Trash2, Receipt, FileDown, Store, Tag, X, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
+import supabase from '../lib/supabase';
 import html2canvas from 'html2canvas';
 
 function POS() {
@@ -31,15 +32,27 @@ function POS() {
   const [editPriceValue, setEditPriceValue] = useState('');
   
   const [loading, setLoading] = useState(true);
+  const [reservedQtys, setReservedQtys] = useState({}); // { sku_id: reserved_qty }
   const receiptRef = useRef(null);
 
   const load = async () => {
-    const [invResp, custResp] = await Promise.all([
+    const [invResp, custResp, reservedResp] = await Promise.all([
       db.getAll('inventory') || [],
-      db.getAll('customers') || []
+      db.getAll('customers') || [],
+      supabase
+        .from('order_line_items')
+        .select('sku_id, quantity, orders!inner(status)')
+        .in('orders.status', ['Pending', 'Confirmed', 'Packed'])
     ]);
     setInventory(invResp || []);
     setCustomers(custResp || []);
+
+    // Build reserved qty map for soft allocation
+    const reserved = {};
+    for (const item of (reservedResp.data || [])) {
+      reserved[item.sku_id] = (reserved[item.sku_id] || 0) + parseFloat(item.quantity || 0);
+    }
+    setReservedQtys(reserved);
     setLoading(false);
   };
 
@@ -48,6 +61,15 @@ function POS() {
   // Use retail_price stored directly on inventory SKU (set by user).
   // Users can click the price tag icon on a card to set/update it.
   const getPrice = (sku) => parseFloat(sku.retail_price) || 0;
+
+  // Soft Allocation: available = current_stock - reserved by active wholesale orders
+  const getAvailable = (sku) => {
+    const skuId = sku.sku_id || sku.id;
+    const reserved = reservedQtys[skuId] || 0;
+    return Math.max(0, parseFloat(sku.current_stock || 0) - reserved);
+  };
+
+  const getReserved = (sku) => reservedQtys[sku.sku_id || sku.id] || 0;
 
   const setSkuPrice = async () => {
     const price = parseFloat(editPriceValue);
@@ -238,18 +260,29 @@ function POS() {
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-12 content-start">
               {filteredInventory.map(sku => {
                 const price = getPrice(sku);
-                const isLow = sku.current_stock <= (sku.restock_alert_level || 0) && sku.restock_alert_level > 0;
+                const available = getAvailable(sku);
+                const reserved = getReserved(sku);
+                const isLow = available <= (sku.restock_alert_level || 0) && sku.restock_alert_level > 0;
+                const isOutOfStock = available <= 0;
                 return (
                   <div key={sku.sku_id || sku.id} className="relative group">
                     <button 
                       onClick={() => addToCart(sku)} 
-                      className={`glass-card hover:-translate-y-1 hover:shadow-lg transition-all p-4 text-left flex flex-col justify-between w-full min-h-[120px] ${sku.current_stock <= 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
-                      disabled={sku.current_stock <= 0}
+                      className={`glass-card hover:-translate-y-1 hover:shadow-lg transition-all p-4 text-left flex flex-col justify-between w-full min-h-[120px] ${isOutOfStock ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      disabled={isOutOfStock}
                     >
                       <div>
-                        <span className="text-[10px] uppercase font-mono tracking-wider opacity-60 mb-1 block" style={{ color: 'var(--color-text-muted)' }}>
-                          {sku.sales_format}
-                        </span>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] uppercase font-mono tracking-wider opacity-60" style={{ color: 'var(--color-text-muted)' }}>
+                            {sku.sales_format}
+                          </span>
+                          {/* Soft Allocation Reserved Badge */}
+                          {reserved > 0 && (
+                            <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-500 bg-amber-500/15 px-1.5 py-0.5 rounded-full">
+                              <Lock size={8} /> {reserved} rsvd
+                            </span>
+                          )}
+                        </div>
                         <h3 className="text-sm font-semibold leading-tight group-hover:text-amber-500 transition-colors" style={{ color: 'var(--color-text-primary)' }}>
                           {sku.product_name}
                         </h3>
@@ -258,8 +291,8 @@ function POS() {
                         <p className="text-lg font-bold" style={{ color: price > 0 ? 'var(--color-accent-gold)' : 'var(--color-text-muted)' }}>
                           {price > 0 ? fmt(price) : 'No price'}
                         </p>
-                        <p className={`text-xs ${isLow ? 'text-red-400' : ''}`} style={!isLow ? { color: 'var(--color-text-muted)' } : {}}>
-                          {sku.current_stock} left
+                        <p className={`text-xs ${isLow ? 'text-red-400' : isOutOfStock ? 'text-red-500 font-bold' : ''}`} style={!isLow && !isOutOfStock ? { color: 'var(--color-text-muted)' } : {}}>
+                          {isOutOfStock ? 'None avail.' : `${available} avail.`}
                         </p>
                       </div>
                     </button>
