@@ -3,10 +3,9 @@
 @tailwind utilities;
 
 /* ==========================================
-   LIGHT & CUTE THEME (Enforced everywhere)
+   LIGHT THEME
    ========================================== */
 :root,
-[data-theme="dark"],
 [data-theme="light"] {
   --color-bg-primary: #f8fafc;
   --color-bg-secondary: #f1f5f9;
@@ -38,6 +37,42 @@
   --color-badge-veg-text: #6b21a8;
   --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
 }
+
+/* ==========================================
+   DEEP FOREST DARK THEME (5AM Greenhouse)
+   ========================================== */
+[data-theme="dark"] {
+  --color-bg-primary: #091510;
+  --color-bg-secondary: #0d1f17;
+  --color-bg-card: rgba(18, 40, 28, 0.92);
+  --color-bg-card-hover: rgba(24, 52, 36, 0.98);
+  --color-bg-input: #0f2318;
+  --color-bg-modal: #0f2318;
+  --color-bg-nav: rgba(9, 21, 16, 0.97);
+  --color-bg-overlay: rgba(0, 0, 0, 0.75);
+  --color-bg-panel: #0d1f17;
+  --color-border: rgba(52, 211, 153, 0.12);
+  --color-border-hover: rgba(52, 211, 153, 0.25);
+  --color-border-focus: #10b981;
+  --color-text-primary: #e6f4ec;
+  --color-text-secondary: #8fbfa0;
+  --color-text-muted: #4d7a60;
+  --color-text-heading: #cde8d6;
+  --color-accent-gold: #10b981;
+  --color-accent-gold-light: #34d399;
+  --color-scrollbar: rgba(52, 211, 153, 0.15);
+  --color-scrollbar-hover: rgba(52, 211, 153, 0.3);
+  --color-badge-herb-bg: rgba(5, 150, 105, 0.2);
+  --color-badge-herb-text: #34d399;
+  --color-badge-flower-bg: rgba(180, 83, 9, 0.2);
+  --color-badge-flower-text: #fbbf24;
+  --color-badge-micro-bg: rgba(29, 78, 216, 0.2);
+  --color-badge-micro-text: #93c5fd;
+  --color-badge-veg-bg: rgba(107, 33, 168, 0.2);
+  --color-badge-veg-text: #c4b5fd;
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(52, 211, 153, 0.08);
+}
+
 
 * {
   margin: 0;

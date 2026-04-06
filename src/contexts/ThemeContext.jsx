@@ -4,8 +4,10 @@ const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    localStorage.setItem('elgreensyde_theme', 'light');
-    return 'light';
+    // Read saved preference; fall back to OS color scheme
+    const saved = localStorage.getItem('elgreensyde_theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
   useEffect(() => {
