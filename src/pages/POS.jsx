@@ -221,7 +221,12 @@ function POS() {
   const openHistory = async () => {
     const logs = await db.getAll('financial_ledger');
     if (logs) {
-      setSalesHistory(logs.filter(l => l.description && l.description.includes('POS Sale')).reverse());
+      setSalesHistory(
+        logs.filter(l => l.description && (
+          l.description.includes('POS Sale') ||
+          l.description.includes('Quick Sell')
+        )).reverse()
+      );
     }
     setShowHistoryModal(true);
   };

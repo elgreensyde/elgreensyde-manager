@@ -63,11 +63,6 @@ function App() {
     { to: '/maintenance', icon: Beaker, label: 'Action Logs' },
   ];
 
-  const commerceNav = [
-    { to: '/orders', icon: ClipboardList, label: 'Orders' },
-    { to: '/targets', icon: Target, label: 'Planting Targets' },
-  ];
-
   return (
     <div className="flex h-screen bg-themed-primary overflow-hidden relative">
       {absenceInfo.requiresAcknowledgment && (
@@ -108,13 +103,6 @@ function App() {
           
           <p className="text-xs font-bold uppercase tracking-wider text-themed-muted px-2 mb-2 mt-8">Operations</p>
           {moreNav.map(item => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${isActive ? 'bg-forest-600/10 text-green-600 font-semibold' : 'text-themed-secondary hover:bg-black/5'}`}>
-              <item.icon size={18} /> <span>{item.label}</span>
-            </NavLink>
-          ))}
-
-          <p className="text-xs font-bold uppercase tracking-wider text-themed-muted px-2 mb-2 mt-8">Commerce</p>
-          {commerceNav.map(item => (
             <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${isActive ? 'bg-forest-600/10 text-green-600 font-semibold' : 'text-themed-secondary hover:bg-black/5'}`}>
               <item.icon size={18} /> <span>{item.label}</span>
             </NavLink>

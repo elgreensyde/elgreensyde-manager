@@ -409,15 +409,32 @@ function Batches() {
                if (tray.status === 'Germinated') badgeColor = 'bg-indigo-500/20 text-indigo-300';
                if (tray.status === 'Completed' || tray.status === 'Transplanted') badgeColor = 'bg-green-500/20 text-green-400 opacity-50';
 
+               const daysIn = tray.sowing_date ? Math.floor((new Date() - new Date(tray.sowing_date)) / (1000 * 60 * 60 * 24)) : 0;
+               const germDays = crop?.rooting_or_germ_days;
+               const showProgress = germDays && tray.status !== 'Completed' && tray.status !== 'Transplanted';
                return (
                 <div key={tray.tray_id || tray.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
                   <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-mono text-gray-400">{tray.tray_code}</span>
-                      <h3 className="font-semibold text-gray-100">{crop ? crop.common_name : 'Unknown Crop'}</h3>
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><Calendar size={12}/> Target Transplant: {tray.target_transplant_date}</p>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-mono text-themed-muted">{tray.tray_code}</span>
+                      <h3 className="font-semibold text-themed-heading">{crop ? crop.common_name : 'Unknown Crop'}</h3>
+                      <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><Calendar size={12}/> Target Transplant: {tray.target_transplant_date}</p>
+                      {showProgress && (
+                        <div className="mt-3">
+                          <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                            <span>Day {daysIn} of {germDays}</span>
+                            <span>{Math.min(100, Math.floor((daysIn / germDays) * 100))}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 transition-all duration-1000"
+                              style={{ width: `${Math.min(100, (daysIn / germDays) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-col items-end gap-2 ml-3">
                        <span className={`badge text-[10px] ${badgeColor}`}>{tray.status}</span>
                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                          <button onClick={() => openEditTray(tray)} className="text-gray-400 hover:text-white p-1"><Edit3 size={14}/></button>
@@ -461,9 +478,9 @@ function Batches() {
                 <div key={plot.plot_id || plot.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-xs font-mono text-gray-400">{plot.plot_code}</span>
-                      <h3 className="font-semibold text-gray-100">{plot.crop_id ? (crop ? crop.common_name : 'Unknown Crop') : 'Empty Bed'}</h3>
-                      {plot.sowing_date && <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><Calendar size={12}/> Planted: {plot.sowing_date}</p>}
+                      <span className="text-xs font-mono text-themed-muted">{plot.plot_code}</span>
+                      <h3 className="font-semibold text-themed-heading">{plot.crop_id ? (crop ? crop.common_name : 'Unknown Crop') : 'Empty Bed'}</h3>
+                      {plot.sowing_date && <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><Calendar size={12}/> Planted: {plot.sowing_date}</p>}
                       {plot.sowing_date && crop?.days_to_maturity && plot.status === 'Active' && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
@@ -489,7 +506,7 @@ function Batches() {
                   </div>
                   {plot.status === 'Active' && (
                     <div className="mt-4 flex flex-col gap-2 border-t border-white/5 pt-3">
-                      <div className="flex justify-between items-center text-xs text-gray-400">
+                      <div className="flex justify-between items-center text-xs text-themed-muted">
                         <span>{plotHarvests.length} Harvests</span>
                         <span className="font-bold text-green-400">{totalYield.toFixed(1)}g Total</span>
                       </div>
@@ -520,9 +537,9 @@ function Batches() {
                 <div key={batch.batch_id || batch.id} className={`glass-card p-4 group select-none active:bg-black/5 transition-colors ${batch.status === 'Completed' ? 'opacity-50' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-xs font-mono text-gray-400">{batch.batch_code}</span>
-                      <h3 className="font-semibold text-gray-100">{crop ? crop.common_name : 'Unknown Crop'}</h3>
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><MapPin size={12}/> {batch.propagation_method}</p>
+                      <span className="text-xs font-mono text-themed-muted">{batch.batch_code}</span>
+                      <h3 className="font-semibold text-themed-heading">{crop ? crop.common_name : 'Unknown Crop'}</h3>
+                      <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><MapPin size={12}/> {batch.propagation_method}</p>
                       {batch.start_date && crop?.days_to_maturity && batch.status === 'Nursery' && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-amber-500">
@@ -546,7 +563,7 @@ function Batches() {
                        </div>
                     </div>
                   </div>
-                  <div className="mt-4 flex justify-between items-center text-xs text-gray-400">
+                  <div className="mt-4 flex justify-between items-center text-xs text-themed-muted">
                      <span>Started: {batch.start_date}</span>
                      <span>{batch.initial_quantity} Units</span>
                   </div>
