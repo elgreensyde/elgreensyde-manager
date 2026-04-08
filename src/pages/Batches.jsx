@@ -163,8 +163,8 @@ function Batches() {
   const deleteTray = async (id) => {
     if(confirm('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)')) {
       try {
+        await lifecycleScheduler.cleanupTasks(id, 'tray');
         await db.delete('trays', id);
-        await lifecycleScheduler.cleanupTasks(id, 'batch');
         toast.success('Tray and linked tasks deleted.');
         load();
       } catch (err) {

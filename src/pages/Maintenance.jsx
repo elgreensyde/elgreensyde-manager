@@ -167,32 +167,32 @@ function Maintenance() {
         ) : (
           <div className="space-y-3">
              {filteredLogs.map(log => (
-               <div key={log.log_id || log.id} className="glass-card p-4 border-l-4" style={{borderLeftColor: log.action_category === 'Fertilize' ? '#3b82f6' : '#ef4444'}}>
-                 <div className="flex justify-between items-start mb-2">
-                   <span className="text-xs uppercase font-bold tracking-wider text-gray-400 flex items-center gap-1">
-                     {getIcon(log.action_category)} {log.action_category}
-                   </span>
-                   <div className="flex items-center gap-2">
-                     <span className="text-xs font-mono text-gray-400 flex items-center gap-1"><Calendar size={12}/> {log.event_date}</span>
-                     <button onClick={(e) => { e.stopPropagation(); deleteLog(log.log_id || log.id); }} className="text-red-400/40 hover:text-red-500 p-3 -m-3 rounded"><X size={18}/></button>
-                   </div>
-                 </div>
-                 
-                 <h3 className="font-bold text-gray-100 text-lg">{log.method_product}</h3>
-                 
-                 <div className="flex justify-between items-end mt-3">
-                   <div>
-                     <p className="text-sm text-gray-400">Target: <span className="font-bold text-white">{getTargetName(log)}</span></p>
-                     {log.dosage_rate && <p className="text-xs text-gray-500 mt-1">Dosage: {log.dosage_rate}</p>}
-                   </div>
-                 </div>
-                 
-                 {log.notes && (
-                   <div className="mt-3 bg-black/20 p-2 rounded text-xs text-gray-400 italic">
-                     "{log.notes}"
-                   </div>
-                 )}
-               </div>
+                <div key={log.log_id || log.id} className="glass-card p-4 border-l-4 select-none" style={{borderLeftColor: log.action_category === 'Fertilize' ? '#3b82f6' : '#ef4444'}}>
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-xs uppercase font-bold tracking-wider text-themed-muted flex items-center gap-1">
+                      {getIcon(log.action_category)} {log.action_category}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-themed-muted flex items-center gap-1"><Calendar size={12}/> {log.event_date}</span>
+                      <button onClick={(e) => { e.stopPropagation(); deleteLog(log.log_id || log.id); }} className="text-red-500/40 hover:text-red-500 p-3 -m-3 rounded-lg flex items-center justify-center transition-colors"><X size={18}/></button>
+                    </div>
+                  </div>
+                  
+                  <h3 className="font-bold text-themed-heading text-lg">{log.method_product}</h3>
+                  
+                  <div className="flex justify-between items-end mt-3">
+                    <div>
+                      <p className="text-sm text-themed-muted">Target: <span className="font-bold text-themed-primary">{getTargetName(log)}</span></p>
+                      {log.dosage_rate && <p className="text-xs text-themed-muted mt-1 font-medium">Dosage: {log.dosage_rate}</p>}
+                    </div>
+                  </div>
+                  
+                  {log.notes && (
+                    <div className="mt-3 bg-themed-secondary/10 p-2 rounded-xl text-xs text-themed-secondary italic border border-themed/20">
+                      "{log.notes}"
+                    </div>
+                  )}
+                </div>
              ))}
           </div>
         )}

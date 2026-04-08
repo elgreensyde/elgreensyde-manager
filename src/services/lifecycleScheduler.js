@@ -195,6 +195,31 @@ const lifecycleScheduler = {
 
     return { count: shiftCount };
   },
+  
+  /**
+   * Cleans up pending tasks for a specific item (tray, batch, or plot)
+   * @param {string} targetId 
+   * @param {string} targetType - 'tray', 'batch', or 'plot'
+   */
+  async cleanupTasks(targetId, targetType) {
+    if (!targetId) return;
+    
+    // Support all primary cultivation keys
+    const column = targetType === 'tray' ? 'tray_id' : 
+                   targetType === 'batch' ? 'batch_id' : 
+                   'plot_id';
+
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq(column, targetId)
+      .eq('status', 'Pending');
+
+    if (error) {
+       console.error(`[Lifecycle] Failed to cleanup tasks for ${targetType} ${targetId}:`, error);
+       throw error;
+    }
+  },
 };
 
 export default lifecycleScheduler;

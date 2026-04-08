@@ -276,7 +276,7 @@ function OrderBuilder() {
                 <div key={item.sku_id} className={`glass-card-static p-3 rounded-xl border ${belowMin ? 'border-amber-500/40' : ''}`} style={{ borderColor: belowMin ? '' : 'var(--color-border)' }}>
                   <div className="flex justify-between items-start mb-2">
                     <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{item.product_name}</p>
-                    <button onClick={() => removeItem(item.sku_id)} className="p-1 text-red-400/60 hover:text-red-500"><Trash2 size={13} /></button>
+                    <button onClick={() => removeItem(item.sku_id)} className="p-3 -m-3 text-red-500/40 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                   </div>
                   {belowMin && (
                     <div className="flex items-center gap-1 mb-2 text-[10px] text-amber-500">

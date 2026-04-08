@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import {
   Printer, AlertTriangle, Clock, CheckCircle2,
   Sprout, ShoppingCart, DollarSign, Lock, Package,
-  ChevronRight, Leaf, Sun, Moon, Calendar, ScanEye
+  ChevronRight, Leaf, Sun, Moon, Calendar, ScanEye, ArrowRight
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
@@ -21,6 +21,7 @@ function Dashboard() {
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
 
   const [weatherBriefing, setWeatherBriefing] = useState(null);
   const [awayPeriods, setAwayPeriods] = useState([]);
@@ -280,11 +281,20 @@ function Dashboard() {
             <div className="space-y-2">
               {overdueTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3 select-none">
-                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 active:scale-90 transition-all" />
+                  <button 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} 
+                    className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-red-500/50 hover:bg-red-500/10 p-3 -m-3 active:scale-95 transition-all flex items-center justify-center" 
+                    title="Mark as completed"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-red-500 truncate">{task.title}</p>
                     <p className="text-xs text-red-500/60 mt-0.5">Due: {task.due_date}</p>
                   </div>
+                  {task.title.toLowerCase().includes('scouting') && (
+                    <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-red-500/10 text-red-500 border-red-500/20">
+                      Go <ArrowRight size={10} />
+                    </button>
+                  )}
                   <AlertTriangle size={16} className="text-red-500 flex-shrink-0 animate-bounce-gentle" />
                 </div>
               ))}
@@ -307,11 +317,21 @@ function Dashboard() {
             <div className="space-y-2">
               {todayTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3 select-none">
-                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 active:scale-90 transition-all" />
+                  <button 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} 
+                    className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/10 p-3 -m-3 active:scale-95 transition-all flex items-center justify-center"
+                    title="Mark as completed"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{task.title}</p>
                     {task.priority === 'Critical' && <span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded mt-1 inline-block">CRITICAL</span>}
                   </div>
+                  {task.title.toLowerCase().includes('scouting') && (
+                    <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      Go <ArrowRight size={10} />
+                    </button>
+                  )}
+                  {task.priority === 'Critical' && <AlertTriangle size={14} className="text-red-500 animate-pulse-soft" />}
                 </div>
               ))}
             </div>

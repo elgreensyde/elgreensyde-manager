@@ -211,7 +211,7 @@ function Customers() {
                   )}
                   <div className="flex gap-1">
                     <button onClick={() => openEdit(c)} className="p-2 rounded-lg hover:opacity-70"><Edit3 size={14} style={{ color: 'var(--color-text-muted)' }} /></button>
-                    <button onClick={() => handleDelete(id)} className="p-2 rounded-lg hover:opacity-70"><Trash2 size={14} className="text-red-500/50" /></button>
+                    <button onClick={() => handleDelete(id)} className="p-3 -m-3 rounded-lg hover:bg-red-500/10 transition-colors"><Trash2 size={16} className="text-red-500/50 hover:text-red-500" /></button>
                   </div>
                 </div>
               </div>

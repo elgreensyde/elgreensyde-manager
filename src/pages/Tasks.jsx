@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, CheckCircle2, Clock, AlertTriangle, X } from 'lucide-react';
+import { Plus, CheckCircle2, Clock, AlertTriangle, X, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import db from '../services/db';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
 
 function Tasks() {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [batches, setBatches] = useState([]);
   const [crops, setCrops] = useState([]);
@@ -135,8 +137,12 @@ function Tasks() {
           return (
             <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 select-none ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
               {task.status !== 'Completed' ? (
-                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className={`flex-shrink-0 w-7 h-7 rounded-full border-2 mt-0.5 active:scale-90 transition-all ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
-              ) : <CheckCircle2 size={20} className="text-green-500/50 flex-shrink-0 mt-0.5" />}
+                <button 
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} 
+                  className={`flex-shrink-0 w-8 h-8 rounded-full border-2 mt-0.5 p-3 -m-3 active:scale-95 transition-all flex items-center justify-center ${task.status === 'Overdue' ? 'border-red-500/50 bg-red-500/5' : 'border-amber-500/50 bg-amber-500/5'}`}
+                  title="Mark as completed"
+                />
+              ) : <CheckCircle2 size={24} className="text-green-500/50 flex-shrink-0 mt-0.5" />}
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through' : ''}`} style={{ color: task.status === 'Completed' ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{displayTitle}</p>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -148,8 +154,22 @@ function Tasks() {
                   {task.is_auto_generated && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>⚙ auto</span>}
                 </div>
               </div>
-              {task.status !== 'Completed' && <StatusIcon size={16} className={`${config.color} flex-shrink-0 mt-0.5`} />}
-              <button onClick={(e) => { e.stopPropagation(); deleteTask(task.task_id || task.id); }} className="text-red-400/40 hover:text-red-500 p-2 rounded transition-colors flex-shrink-0 active:scale-90" title="Delete task"><X size={14} /></button>
+              {task.status !== 'Completed' && (
+                <div className="flex items-center gap-2">
+                  {task.title.toLowerCase().includes('scouting') && (
+                    <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      Go <ArrowRight size={10} />
+                    </button>
+                  )}
+                  {(task.title.toLowerCase().includes('prep') || task.title.toLowerCase().includes('batch')) && (
+                    <button onClick={() => navigate('/batches')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-blue-500/10 text-blue-600 border-blue-500/20">
+                      Go <ArrowRight size={10} />
+                    </button>
+                  )}
+                  <StatusIcon size={16} className={`${config.color} flex-shrink-0`} />
+                </div>
+              )}
+              <button onClick={(e) => { e.stopPropagation(); deleteTask(task.task_id || task.id); }} className="text-red-400/40 hover:text-red-500 p-3 -m-3 rounded-lg transition-colors flex-shrink-0 active:scale-90" title="Delete task"><X size={16} /></button>
             </div>
           );
         })}
