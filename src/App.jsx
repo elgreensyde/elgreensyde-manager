@@ -111,7 +111,7 @@ function App() {
       </aside>
 
       {/* MAIN CONTENT AREA */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-screen overflow-y-auto pb-24 relative no-scrollbar">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/crops" element={<CropLibrary />} />

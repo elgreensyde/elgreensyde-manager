@@ -109,6 +109,7 @@ function Maintenance() {
       
       toast.success(`Successfully logged action for ${form.target_ids.length} targets!`);
     } catch (err) {
+      alert(err.message);
       console.error("Batch log error:", err);
       toast.error("Failed to log all actions.");
     }
@@ -118,7 +119,17 @@ function Maintenance() {
     load();
   };
 
-  const deleteLog = async (logId) => { if (confirm('Delete this log?')) { await db.delete('maintenance_logs', logId); load(); } };
+  const deleteLog = async (logId) => { 
+    if (confirm('Delete this log?')) { 
+      try {
+        await db.delete('maintenance_logs', logId); 
+        load(); 
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to delete log.');
+      }
+    } 
+  };
 
   const getIcon = (cat) => {
     if (cat === 'Pest Treatment' || cat === 'Scouting') return <ShieldAlert size={16} className="text-red-500" />;
@@ -163,7 +174,7 @@ function Maintenance() {
                    </span>
                    <div className="flex items-center gap-2">
                      <span className="text-xs font-mono text-gray-400 flex items-center gap-1"><Calendar size={12}/> {log.event_date}</span>
-                     <button onClick={() => deleteLog(log.log_id || log.id)} className="text-red-400/40 hover:text-red-500 p-1 rounded"><X size={14}/></button>
+                     <button onClick={(e) => { e.stopPropagation(); deleteLog(log.log_id || log.id); }} className="text-red-400/40 hover:text-red-500 p-3 -m-3 rounded"><X size={18}/></button>
                    </div>
                  </div>
                  

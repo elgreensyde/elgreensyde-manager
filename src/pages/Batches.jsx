@@ -144,6 +144,7 @@ function Batches() {
       setEditingTrayId(null);
       load();
     } catch (err) {
+      alert(err.message);
       if(err.message.includes("tray_code_key")) toast.error("Tray Code already exists!");
       else toast.error("Error saving tray.");
     }
@@ -161,10 +162,15 @@ function Batches() {
 
   const deleteTray = async (id) => {
     if(confirm('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)')) {
-      await db.delete('trays', id);
-      await lifecycleScheduler.cleanupTasks(id, 'batch');
-      toast.success('Tray and linked tasks deleted.');
-      load();
+      try {
+        await db.delete('trays', id);
+        await lifecycleScheduler.cleanupTasks(id, 'batch');
+        toast.success('Tray and linked tasks deleted.');
+        load();
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to delete tray.');
+      }
     }
   };
 
@@ -197,6 +203,7 @@ function Batches() {
       setActiveTrayForTransplant(null);
       load();
     } catch (err) {
+      alert(err.message);
       toast.error('Failed to transplant. Check console.');
       console.error(err);
     }
@@ -218,6 +225,7 @@ function Batches() {
       setEditingPlotId(null);
       load();
     } catch (err) {
+      alert(err.message);
       if(err.message.includes("plots_plot_code_key")) toast.error("Plot Code already exists! Please use a unique code.");
       else toast.error("Error saving plot.");
     }
@@ -231,10 +239,15 @@ function Batches() {
 
   const deletePlot = async (id) => {
     if(confirm('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)')) {
-      await db.delete('plots', id);
-      await lifecycleScheduler.cleanupTasks(id, 'plot');
-      toast.success('Plot and tasks deleted.');
-      load();
+      try {
+        await db.delete('plots', id);
+        await lifecycleScheduler.cleanupTasks(id, 'plot');
+        toast.success('Plot and tasks deleted.');
+        load();
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to delete plot.');
+      }
     }
   };
 
@@ -269,6 +282,7 @@ function Batches() {
       setEditingBatchId(null);
       load();
     } catch (err) {
+      alert(err.message);
       if(err.message.includes("batches_batch_code_key")) toast.error("Batch Code already exists! Please use a unique code.");
       else toast.error("Error saving batch.");
     }
@@ -276,10 +290,15 @@ function Batches() {
 
   const deleteBatch = async (id) => {
     if(confirm('Archive this batch and delete all pending tasks?')) {
-      await db.update('batches', id, { status: 'Archived' });
-      await lifecycleScheduler.cleanupTasks(id, 'batch');
-      toast.success('Batch archived.');
-      load();
+      try {
+        await db.update('batches', id, { status: 'Archived' });
+        await lifecycleScheduler.cleanupTasks(id, 'batch');
+        toast.success('Batch archived.');
+        load();
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to archive batch.');
+      }
     }
   };
 
@@ -312,6 +331,7 @@ function Batches() {
       toast.success(`Sent ${finalQty} units to inventory!`);
       load();
     } catch(err) {
+      alert(err.message);
       toast.error('Failed to move to inventory.');
     }
   };
@@ -350,6 +370,7 @@ function Batches() {
       setSafetyAssessment(null);
       load();
     } catch(err) {
+      alert(err.message);
       toast.error('Could not log harvest.');
     }
   };

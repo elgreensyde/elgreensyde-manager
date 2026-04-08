@@ -15,15 +15,31 @@ function Tasks() {
 
   const loadData = async () => {
     await db.markOverdueTasks();
-    const [t, b, c, p, h, i] = await Promise.all([
+    const [t, b, c, p, h, i, s, tr] = await Promise.all([
       db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
-      db.getAll('plots') || [], db.getAll('harvest_logs') || [], db.getAll('inventory') || []
+      db.getAll('plots') || [], db.getAll('harvest_logs') || [], db.getAll('inventory') || [],
+      db.getAll('monitoring_sessions') || [], db.getAll('trays') || []
     ]);
     
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Auto-generate passive tasks, but guard against duplicates that Dashboard may have already written
-    const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
+    // Rule 8: Overdue Escalation (Passive)
+    const overdueToEscalate = (t || []).filter(task => {
+      if (task.status !== 'Overdue' || task.priority === 'Critical') return false;
+      const dueDate = new Date(task.due_date);
+      dueDate.setHours(0,0,0,0);
+      const daysOverdue = Math.floor((new Date() - dueDate) / 86400000);
+      return daysOverdue >= 2;
+    });
+
+    if (overdueToEscalate.length > 0) {
+      await Promise.all(overdueToEscalate.map(task => 
+        db.update('tasks', task.task_id || task.id, { priority: 'Critical' })
+      ));
+    }
+
+    // Auto-generate passive tasks
+    const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || [], tr || [], s || []);
     const trulyNew = newTasks.filter(nt =>
       !(t || []).some(existing =>
         existing.title === nt.title &&
@@ -32,8 +48,8 @@ function Tasks() {
       )
     );
 
-    if (trulyNew.length > 0) {
-      await db.insertMany('tasks', trulyNew);
+    if (trulyNew.length > 0 || overdueToEscalate.length > 0) {
+      if (trulyNew.length > 0) await db.insertMany('tasks', trulyNew);
       const latestTasks = await db.getAll('tasks');
       setTasks(latestTasks || []);
     } else {
@@ -52,11 +68,29 @@ function Tasks() {
 
   const displayTasks = filterStatus === 'Overdue' ? overdue : filterStatus === 'Today' ? dueToday : filterStatus === 'Upcoming' ? upcoming : filterStatus === 'Completed' ? completed : [...overdue, ...dueToday, ...upcoming];
 
-  const completeTask = async (taskId) => { await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() }); loadData(); };
+  const completeTask = async (taskId) => { 
+    try {
+      await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() }); 
+      loadData(); 
+    } catch (err) {
+      alert(err.message);
+      console.error(err);
+    }
+  };
 
   const handleSubmit = async (e) => { e.preventDefault(); await db.insert('tasks', { title: form.title, due_date: form.due_date, priority: form.priority, batch_id: form.batch_id || null, plot_id: form.plot_id || null, status: 'Pending', is_auto_generated: false }); setShowForm(false); setForm({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' }); loadData(); };
 
-  const deleteTask = async (taskId) => { if (confirm('Delete this task?')) { await db.delete('tasks', taskId); loadData(); } };
+  const deleteTask = async (taskId) => { 
+    if (confirm('Delete this task?')) { 
+      try {
+        await db.delete('tasks', taskId); 
+        loadData(); 
+      } catch (err) {
+        alert(err.message);
+        console.error(err);
+      }
+    } 
+  };
   const getBatchLabel = (batchId) => { if (!batchId) return null; const batch = batches.find(b => b.id === batchId || b.batch_id === batchId); const crop = batch ? crops.find(c => c.id === batch.crop_id) : null; return batch ? `${batch.batch_code} ${crop?.common_name||''}` : null; };
   const getPlotLabel = (plotId) => { if (!plotId) return null; const plot = plots.find(p => p.id === plotId || p.plot_id === plotId); return plot ? plot.plot_code : null; };
 
@@ -99,7 +133,7 @@ function Tasks() {
           const displayTitle = task.title || 'Untitled Operation';
 
           return (
-            <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
+            <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 select-none ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
               {task.status !== 'Completed' ? (
                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className={`flex-shrink-0 w-7 h-7 rounded-full border-2 mt-0.5 active:scale-90 transition-all ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
               ) : <CheckCircle2 size={20} className="text-green-500/50 flex-shrink-0 mt-0.5" />}

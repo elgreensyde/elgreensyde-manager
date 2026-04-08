@@ -1,6 +1,6 @@
 // Translates business logic rules into auto-generated tasks passively.
 
-export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_logs, inventory, crops) {
+export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_logs, inventory, crops, trays = [], monitoring_sessions = []) {
   const newTasks = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -48,8 +48,7 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
     }
   });
 
-  // Rule 2: Batch in nursery exceeded expected time (We'll use Crop germ days + 14 as arbitrary proxy if not defined, or check market readiness)
-  // Since Prompt mentioned: "Batch nursery days exceeded target transplant date... Check market readiness"
+  // Rule 2: Batch in nursery exceeded expected time
   batches.filter(b => b.status === 'Nursery' && b.start_date).forEach(batch => {
     const crop = crops.find(c => c.id === batch.crop_id);
     if (crop && crop.days_to_maturity) {
@@ -57,7 +56,6 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
       startDate.setHours(0,0,0,0);
       const daysElapsed = Math.floor((today - startDate) / 86400000);
       
-      // If it's near/past days to maturity in the pot
       if (daysElapsed >= crop.days_to_maturity) {
         const titleStr = `${batch.batch_code} — Check market readiness`;
         if (!taskExists(titleStr)) {
@@ -73,8 +71,6 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
       }
     }
   });
-
-  // Rule 3 (Fertilizer/Pest is handled instantly upon logging in Maintenance.jsx)
 
   // Rule 4: Inventory SKU below restock alert level
   inventory.forEach(inv => {
@@ -107,5 +103,52 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
     }
   });
 
+  // Rule 6: Scouting Persistence (48h Gap)
+  let latestScoutDate = null;
+  if (monitoring_sessions && monitoring_sessions.length > 0) {
+    const latest = monitoring_sessions.sort((a,b) => new Date(b.created_at || b.started_at) - new Date(a.created_at || a.started_at))[0];
+    latestScoutDate = new Date(latest.created_at || latest.started_at);
+  }
+
+  const daysSinceScout = latestScoutDate ? Math.floor((today - latestScoutDate) / 86400000) : 999;
+  if (daysSinceScout >= 2) {
+    const titleStr = `High Priority: Greenhouse Scouting Needed (Last checked: ${daysSinceScout} days ago)`;
+    if (!taskExists(titleStr)) {
+      newTasks.push({
+        title: titleStr,
+        due_date: new Date().toISOString().split('T')[0],
+        priority: 'High',
+        status: 'Pending',
+        is_auto_generated: true
+      });
+    }
+  }
+
+  // Rule 7: Transplant Window (48h Warning)
+  trays.filter(t => t.status !== 'Completed' && t.status !== 'Transplanted' && t.target_transplant_date).forEach(tray => {
+    const targetDate = new Date(tray.target_transplant_date);
+    const diff = Math.floor((targetDate - today) / 86400000);
+    
+    // Warn 2 days before the transplant date
+    if (diff <= 2 && diff >= 0) {
+      const titleStr = `Upcoming: Prep Growing Zone for ${tray.tray_code}`;
+      if (!taskExists(titleStr)) {
+        newTasks.push({
+          title: titleStr,
+          due_date: new Date().toISOString().split('T')[0],
+          priority: 'High',
+          status: 'Pending',
+          tray_id: tray.tray_id || tray.id,
+          is_auto_generated: true
+        });
+      }
+    }
+  });
+
+  // Note on Rule 8: Priority Escalation is handled passively 
+  // We can't return "new" tasks for escalation, we must return a separate list of updates
+  // Or better, we can modify the task table here if we had db access, 
+  // but this function is pure. Dashboard will handle priority bumping via existingTasks check.
+  
   return newTasks;
 }

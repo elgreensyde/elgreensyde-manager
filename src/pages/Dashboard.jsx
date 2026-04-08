@@ -33,16 +33,34 @@ function Dashboard() {
       await generatePreventiveAlerts();
       const { default: weatherService } = await import('../services/weatherService');
       
-      const [t, b, c, i, p, h, w, away, sessions] = await Promise.all([
+      const [t, b, c, i, p, h, w, away, sessions, trays] = await Promise.all([
         db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
         db.getAll('inventory'), db.getAll('plots'), db.getAll('harvest_logs'),
         weatherService.getForecast(),
         db.getAll('away_periods'),
-        db.getAll('monitoring_sessions')
+        db.getAll('monitoring_sessions'),
+        db.getAll('trays')
       ]);
       
       const todayStr = new Date().toISOString().split('T')[0];
-      const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || []);
+      const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || [], trays || [], sessions || []);
+      
+      // Rule 8: Overdue Escalation (Passive)
+      // If a task is Overdue for 2+ days, escalate its priority to 'Critical'
+      const overdueToEscalate = (t || []).filter(task => {
+        if (task.status !== 'Overdue' || task.priority === 'Critical') return false;
+        const dueDate = new Date(task.due_date);
+        dueDate.setHours(0,0,0,0);
+        const daysOverdue = Math.floor((new Date() - dueDate) / 86400000);
+        return daysOverdue >= 2;
+      });
+
+      if (overdueToEscalate.length > 0) {
+        await Promise.all(overdueToEscalate.map(task => 
+          db.update('tasks', task.task_id || task.id, { priority: 'Critical' })
+        ));
+      }
+
       const trulyNew = newTasks.filter(nt =>
         !(t || []).some(existing =>
           existing.title === nt.title &&
@@ -50,8 +68,9 @@ function Dashboard() {
           (existing.status === 'Pending' || existing.status === 'Overdue')
         )
       );
-      if (trulyNew.length > 0) {
-        await db.insertMany('tasks', trulyNew);
+
+      if (trulyNew.length > 0 || overdueToEscalate.length > 0) {
+        if (trulyNew.length > 0) await db.insertMany('tasks', trulyNew);
         const latestTasks = await db.getAll('tasks');
         setTasks(latestTasks || []);
       } else {
@@ -93,8 +112,13 @@ function Dashboard() {
   const activeBatches = useMemo(() => batches.filter(b => b.status === 'Nursery'), [batches]); 
 
   const completeTask = async (taskId) => {
-    await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() });
-    loadData();
+    try {
+      await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() });
+      loadData();
+    } catch (err) {
+      alert(err.message);
+      console.error(err);
+    }
   };
 
   const handleCreateAway = async (e) => {

@@ -57,32 +57,42 @@ function Inventory() {
 
   const handleProductSubmit = async (e) => {
     e.preventDefault();
-    const data = {
-      ...productForm,
-      current_stock: parseFloat(productForm.current_stock) || 0,
-      restock_alert_level: parseFloat(productForm.restock_alert_level) || 0
-    };
-    if (editingProduct) {
-      await db.update('inventory', editingProduct, data);
-    } else {
-      await db.insert('inventory', data);
+    try {
+      const data = {
+        ...productForm,
+        current_stock: parseFloat(productForm.current_stock) || 0,
+        restock_alert_level: parseFloat(productForm.restock_alert_level) || 0
+      };
+      if (editingProduct) {
+        await db.update('inventory', editingProduct, data);
+      } else {
+        await db.insert('inventory', data);
+      }
+      setShowProductForm(false);
+      resetProductForm();
+      load();
+    } catch (err) {
+      alert(err.message);
+      toast.error('Failed to save product.');
     }
-    setShowProductForm(false);
-    resetProductForm();
-    load();
   };
 
   const handleRestock = async (itemId) => {
-    const qty = parseFloat(restockQty);
-    if (!qty || qty === 0) return;
-    const item = items.find(i => i.sku_id === itemId || i.id === itemId);
-    if (!item) return;
-    await db.update('inventory', item.sku_id || item.id, {
-      current_stock: (parseFloat(item.current_stock) || 0) + qty
-    });
-    setShowRestock(null);
-    setRestockQty('');
-    load();
+    try {
+      const qty = parseFloat(restockQty);
+      if (!qty || qty === 0) return;
+      const item = items.find(i => i.sku_id === itemId || i.id === itemId);
+      if (!item) return;
+      await db.update('inventory', item.sku_id || item.id, {
+        current_stock: (parseFloat(item.current_stock) || 0) + qty
+      });
+      setShowRestock(null);
+      setRestockQty('');
+      load();
+    } catch (err) {
+      alert(err.message);
+      toast.error('Failed to adjust stock.');
+    }
   };
 
   const openEditProduct = (item) => {
@@ -99,8 +109,13 @@ function Inventory() {
 
   const deleteProduct = async (id) => {
     if (confirm('Delete this product? Warning: Could affect linked transactions.')) {
-      await db.delete('inventory', id);
-      load();
+      try {
+        await db.delete('inventory', id);
+        load();
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to delete product.');
+      }
     }
   };
 
@@ -122,37 +137,52 @@ function Inventory() {
   const handleInputSubmit = async (e) => {
     e.preventDefault();
     if (!inputForm.product_name.trim()) { toast.error('Product name required'); return; }
-    const data = {
-      ...inputForm,
-      current_stock: parseFloat(inputForm.current_stock) || 0,
-      low_stock_threshold: parseFloat(inputForm.low_stock_threshold) || 0,
-      withholding_days: parseInt(inputForm.withholding_days) || 0
-    };
-    if (editingInputId) {
-      await db.update('inputs_inventory', editingInputId, data);
-      toast.success('Consumable updated');
-    } else {
-      await db.insert('inputs_inventory', data);
-      toast.success('Consumable added');
+    try {
+      const data = {
+        ...inputForm,
+        current_stock: parseFloat(inputForm.current_stock) || 0,
+        low_stock_threshold: parseFloat(inputForm.low_stock_threshold) || 0,
+        withholding_days: parseInt(inputForm.withholding_days) || 0
+      };
+      if (editingInputId) {
+        await db.update('inputs_inventory', editingInputId, data);
+        toast.success('Consumable updated');
+      } else {
+        await db.insert('inputs_inventory', data);
+        toast.success('Consumable added');
+      }
+      setShowInputForm(false);
+      resetInputForm();
+      load();
+    } catch (err) {
+      alert(err.message);
+      toast.error('Failed to save consumable.');
     }
-    setShowInputForm(false);
-    resetInputForm();
-    load();
   };
 
   const deleteInput = async (id) => {
     if (confirm('Delete this consumable?')) {
-      await db.delete('inputs_inventory', id);
-      toast.success('Deleted');
-      load();
+      try {
+        await db.delete('inputs_inventory', id);
+        toast.success('Deleted');
+        load();
+      } catch (err) {
+        alert(err.message);
+        toast.error('Failed to delete consumable.');
+      }
     }
   };
 
   const adjustInputStock = async (input, amount) => {
-    const newStock = Math.max(0, (input.current_stock || 0) + amount);
-    await db.update('inputs_inventory', input.input_id, { current_stock: newStock });
-    toast.success(`Stock ${amount > 0 ? 'added' : 'deducted'}: ${Math.abs(amount)} ${input.stock_unit}`);
-    load();
+    try {
+      const newStock = Math.max(0, (input.current_stock || 0) + amount);
+      await db.update('inputs_inventory', input.input_id, { current_stock: newStock });
+      toast.success(`Stock ${amount > 0 ? 'added' : 'deducted'}: ${Math.abs(amount)} ${input.stock_unit}`);
+      load();
+    } catch (err) {
+      alert(err.message);
+      toast.error('Failed to adjust stock.');
+    }
   };
 
   // --- Filtered lists ---
@@ -249,7 +279,7 @@ function Inventory() {
           ) : filteredProducts.map(item => {
             const isLow = item.current_stock <= item.restock_alert_level && item.restock_alert_level > 0;
             return (
-              <div key={item.sku_id || item.id} className={`glass-card p-4 ${isLow ? 'border-l-4 border-l-red-500/70' : ''}`}>
+              <div key={item.sku_id || item.id} className={`glass-card p-4 select-none ${isLow ? 'border-l-4 border-l-red-500/70' : ''}`}>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -274,12 +304,12 @@ function Inventory() {
                     </div>
                   </div>
                 )}
-                <div className="flex gap-2 mt-4 pt-4" style={{ borderTop: '1px dashed var(--color-border)' }}>
-                  <button onClick={() => setShowRestock(showRestock === (item.sku_id || item.id) ? null : (item.sku_id || item.id))} className="btn-secondary !text-xs !px-3 !py-1.5 flex-1 justify-center bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border-transparent">
+                <div className="flex gap-4 mt-4 pt-4" style={{ borderTop: '1px dashed var(--color-border)' }}>
+                  <button onClick={(e) => { e.stopPropagation(); setShowRestock(showRestock === (item.sku_id || item.id) ? null : (item.sku_id || item.id)); }} className="btn-secondary !text-xs !px-3 !py-1.5 flex-1 justify-center bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border-transparent">
                     <RotateCcw size={12} /> Adjust Stock
                   </button>
-                  <button onClick={() => openEditProduct(item)} className="p-2 rounded-lg hover:bg-black/10 transition-colors"><Edit3 size={14} className="text-gray-400" /></button>
-                  <button onClick={() => deleteProduct(item.sku_id || item.id)} className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"><Trash2 size={14} className="text-red-500/70" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); openEditProduct(item); }} className="p-3 -m-3 rounded-lg hover:bg-black/10 transition-colors"><Edit3 size={18} className="text-themed-muted" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteProduct(item.sku_id || item.id); }} className="p-3 -m-3 rounded-lg hover:bg-red-500/10 transition-colors"><Trash2 size={18} className="text-red-500/70" /></button>
                 </div>
                 {showRestock === (item.sku_id || item.id) && (
                   <div className="mt-3 p-3 bg-black/5 rounded-xl border border-white/5 animate-fade-in flex gap-2">
@@ -306,7 +336,7 @@ function Inventory() {
             const isLow = input.current_stock <= input.low_stock_threshold && input.low_stock_threshold > 0;
             const stockPct = input.low_stock_threshold > 0 ? Math.min(100, (input.current_stock / input.low_stock_threshold) * 100) : 100;
             return (
-              <div key={input.input_id} className="glass-card p-4" style={isLow ? { borderLeft: '4px solid #f59e0b' } : {}}>
+              <div key={input.input_id} className="glass-card p-4 select-none" style={isLow ? { borderLeft: '4px solid #f59e0b' } : {}}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: cfg.bg }}>
@@ -322,9 +352,9 @@ function Inventory() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => openEditInput(input)} className="p-1.5 rounded-lg hover:opacity-70"><Edit3 size={13} style={{ color: 'var(--color-text-muted)' }} /></button>
-                    <button onClick={() => deleteInput(input.input_id)} className="p-1.5 rounded-lg hover:opacity-70"><Trash2 size={13} className="text-red-500/50" /></button>
+                  <div className="flex items-center gap-4">
+                    <button onClick={(e) => { e.stopPropagation(); openEditInput(input); }} className="p-3 -m-3 rounded-lg hover:opacity-70"><Edit3 size={16} style={{ color: 'var(--color-text-muted)' }} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); deleteInput(input.input_id); }} className="p-3 -m-3 rounded-lg hover:opacity-70"><Trash2 size={16} className="text-red-500/50" /></button>
                   </div>
                 </div>
 
@@ -340,8 +370,8 @@ function Inventory() {
                 </div>
 
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => { const amt = prompt(`Add stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20">+ Add</button>
-                  <button onClick={() => { const amt = prompt(`Deduct stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, -parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-red-500 bg-red-500/10 hover:bg-red-500/20">− Deduct</button>
+                  <button onClick={(e) => { e.stopPropagation(); const amt = prompt(`Add stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20">+ Add</button>
+                  <button onClick={(e) => { e.stopPropagation(); const amt = prompt(`Deduct stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, -parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-red-500 bg-red-500/10 hover:bg-red-500/20">− Deduct</button>
                 </div>
               </div>
             );
