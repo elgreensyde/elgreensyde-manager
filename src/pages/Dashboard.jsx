@@ -256,7 +256,7 @@ function Dashboard() {
             <div className="space-y-2">
               {overdueTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3 select-none">
-                  <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 active:scale-90 transition-all" />
+                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-red-500/50 hover:bg-red-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-red-500 truncate">{task.title}</p>
                     <p className="text-xs text-red-500/60 mt-0.5">Due: {task.due_date}</p>
@@ -283,7 +283,7 @@ function Dashboard() {
             <div className="space-y-2">
               {todayTasks.map(task => (
                 <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3 select-none">
-                  <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 active:scale-90 transition-all" />
+                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className="flex-shrink-0 w-7 h-7 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/20 active:scale-90 transition-all" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>{task.title}</p>
                     {task.priority === 'Critical' && <span className="text-[10px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded mt-1 inline-block">CRITICAL</span>}

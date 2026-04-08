@@ -101,7 +101,7 @@ function Tasks() {
           return (
             <div key={task.task_id || task.id} className={`glass-card p-4 border-l-4 ${config.border} ${task.status === 'Completed' ? 'opacity-60' : ''} flex items-start gap-3`}>
               {task.status !== 'Completed' ? (
-                <button onClick={(e) => { e.stopPropagation(); completeTask(task.task_id || task.id); }} className={`flex-shrink-0 w-7 h-7 rounded-full border-2 mt-0.5 active:scale-90 transition-all ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
+                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} className={`flex-shrink-0 w-7 h-7 rounded-full border-2 mt-0.5 active:scale-90 transition-all ${task.status === 'Overdue' ? 'border-red-500/50 hover:bg-red-500/20' : 'border-amber-500/50 hover:bg-amber-500/20'}`} />
               ) : <CheckCircle2 size={20} className="text-green-500/50 flex-shrink-0 mt-0.5" />}
               <div className="flex-1 min-w-0">
                 <p className={`text-sm font-medium ${task.status === 'Completed' ? 'line-through' : ''}`} style={{ color: task.status === 'Completed' ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{displayTitle}</p>

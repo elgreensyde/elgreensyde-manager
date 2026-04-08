@@ -105,14 +105,17 @@ const lifecycleScheduler = {
                       (stage.name.toLowerCase().includes('transplant') || stage.name.toLowerCase().includes('sow')) ? 'Transplant' :
                       'Maintenance';
 
-      tasksToCreate.push({
-        title: `${stage.name}: ${targetType === 'batch' ? 'Batch' : 'Plot'} Check`,
-        due_date: stageDate.toISOString().split('T')[0],
-        priority: 'Medium',
-        category,
-        [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
-        is_auto_generated: true
-      });
+      const title = `${stage.name}: ${targetType === 'batch' ? 'Batch' : 'Plot'} Check`.trim();
+      if (title && !title.includes('undefined')) {
+        tasksToCreate.push({
+          title,
+          due_date: stageDate.toISOString().split('T')[0],
+          priority: 'Medium',
+          category,
+          [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
+          is_auto_generated: true
+        });
+      }
     }
 
     // 2. Generation: Fertilizer Schedule
@@ -121,15 +124,18 @@ const lifecycleScheduler = {
       const fertDate = new Date(startDate);
       fertDate.setDate(startDate.getDate() + (fert.week * 7));
 
-      tasksToCreate.push({
-        title: `Apply ${fert.input} (Fert Cycle)`,
-        due_date: fertDate.toISOString().split('T')[0],
-        priority: 'High',
-        category: 'Fertilize',
-        [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
-        is_auto_generated: true,
-        weather_sensitive: true
-      });
+      const title = `Apply ${fert.input} (Fert Cycle)`.trim();
+      if (title && !title.includes('undefined')) {
+        tasksToCreate.push({
+          title,
+          due_date: fertDate.toISOString().split('T')[0],
+          priority: 'High',
+          category: 'Fertilize',
+          [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
+          is_auto_generated: true,
+          weather_sensitive: true
+        });
+      }
     }
 
     // 3. Sequential Insertion with Constraint Respecting

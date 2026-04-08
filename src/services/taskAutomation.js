@@ -7,9 +7,10 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
 
   // Helper to check if a specifically generated task is already in the queue (pending or overdue)
   const taskExists = (titleFragment) => {
+    const searchTitle = titleFragment.toLowerCase().trim();
     return existingTasks.some(t => 
       (t.status === 'Pending' || t.status === 'Overdue') && 
-      t.title.includes(titleFragment)
+      t.title.toLowerCase().trim().includes(searchTitle)
     );
   };
 

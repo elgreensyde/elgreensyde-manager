@@ -265,17 +265,37 @@ function Monitoring() {
 
   const createTasksFromFlags = async () => {
     if (!sessionSummary?.createdIssues?.length) return;
+    
+    const existingTasks = await db.getAll('tasks');
+    let createdCount = 0;
+
     for (const issue of sessionSummary.createdIssues) {
-      await db.insert('tasks', {
-        title: `Resolve: ${issue.description.substring(0, 80)}`,
-        due_date: new Date().toISOString().split('T')[0],
-        priority: issue.severity === 'High' ? 'High' : 'Medium',
-        status: 'Pending',
-        is_auto_generated: true,
-        [issue.target_type === 'plot' ? 'plot_id' : 'batch_id']: issue.target_id,
-      });
+      const titleStr = `Resolve: ${issue.description.substring(0, 80)}`;
+      const normalizedTitle = titleStr.toLowerCase().trim();
+      
+      const exists = existingTasks.some(t => 
+        (t.status === 'Pending' || t.status === 'Overdue') && 
+        t.title.toLowerCase().trim().includes(normalizedTitle)
+      );
+
+      if (!exists) {
+        await db.insert('tasks', {
+          title: titleStr,
+          due_date: new Date().toISOString().split('T')[0],
+          priority: issue.severity === 'High' ? 'High' : 'Medium',
+          status: 'Pending',
+          is_auto_generated: true,
+          [issue.target_type === 'plot' ? 'plot_id' : 'batch_id']: issue.target_id,
+        });
+        createdCount++;
+      }
     }
-    toast.success(`${sessionSummary.createdIssues.length} tasks created!`);
+    
+    if (createdCount > 0) {
+      toast.success(`${createdCount} tasks created!`);
+    } else {
+      toast.error('Tasks already exist for these issues.');
+    }
   };
 
   const dismissAlert = async (alertId) => {
