@@ -21,6 +21,58 @@ import awayService from './services/awayService';
 import notificationService from './services/notificationService';
 import supabase from './lib/supabase';
 
+function GlobalDialog() {
+  const [data, setData] = useState(null);
+  const [inputValue, setInputValue] = useState('');
+
+  useEffect(() => {
+    const handler = (e) => {
+      setData(e.detail);
+      setInputValue(e.detail.defaultValue || '');
+    };
+    window.addEventListener('show-dialog', handler);
+    return () => window.removeEventListener('show-dialog', handler);
+  }, []);
+
+  if (!data) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { data.onCancel(); setData(null); }} />
+      <div className="relative w-full max-w-sm glass-card border p-6 animate-slide-up shadow-2xl" style={{ borderColor: 'var(--color-border)' }}>
+        <h3 className="text-lg font-display font-bold mb-3" style={{ color: 'var(--color-text-heading)' }}>
+          {data.type === 'confirm' ? 'Confirm Action' : 'Input Required'}
+        </h3>
+        <p className="text-sm mb-5" style={{ color: 'var(--color-text-primary)' }}>{data.message}</p>
+        
+        {data.type === 'prompt' && (
+          <input 
+            type="text" 
+            autoFocus 
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            className="input-field w-full mb-5" 
+            placeholder="Type here..."
+          />
+        )}
+        
+        <div className="flex gap-3">
+          <button className="flex-1 py-3 rounded-xl text-sm font-bold opacity-80 hover:opacity-100 transition-all" 
+                  style={{ background: 'var(--color-bg-overlay)', color: 'var(--color-text-primary)' }}
+                  onClick={() => { data.onCancel(); setData(null); }}>
+            Cancel
+          </button>
+          <button className={`flex-1 py-3 rounded-xl text-sm font-bold text-white transition-transform active:scale-95 ${data.type === 'confirm' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                  disabled={data.type === 'prompt' && data.required && !inputValue.trim()}
+                  onClick={() => { data.onConfirm(data.type === 'prompt' ? inputValue : true); setData(null); }}>
+            {data.type === 'confirm' ? 'Yes, Delete' : 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [absenceInfo, setAbsenceInfo] = useState({ requiresAcknowledgment: false });
@@ -71,6 +123,7 @@ function App() {
           onComplete={() => setAbsenceInfo({ ...absenceInfo, requiresAcknowledgment: false })} 
         />
       )}
+      <GlobalDialog />
       <Toaster 
         position="top-center" 
         toastOptions={{

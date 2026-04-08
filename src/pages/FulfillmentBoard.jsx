@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 import supabase from '../lib/supabase';
 import db from '../services/db';
+import { confirmAction } from '../services/dialogService';
 
 const STATUS_FLOW = ['Pending', 'Confirmed', 'Packed', 'Fulfilled'];
 
@@ -59,7 +60,7 @@ function FulfillmentBoard() {
     const isFulfilling = cfg.next === 'Fulfilled';
 
     // Confirm before Fulfilling (irreversible)
-    if (isFulfilling && !confirm(`Fulfill order ${order.order_number}? This will deduct stock and write to the Ledger.`)) return;
+    if (isFulfilling && !(await confirmAction(`Fulfill order ${order.order_number}? This will deduct stock and write to the Ledger.`))) return;
 
     try {
       // 1. Update order status

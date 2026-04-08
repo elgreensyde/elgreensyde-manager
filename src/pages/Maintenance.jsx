@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ShieldAlert, Beaker, Search, Calendar, Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
-
+import { confirmAction } from '../services/dialogService';
 function Maintenance() {
   const [logs, setLogs] = useState([]);
   const [plots, setPlots] = useState([]);
@@ -120,7 +120,7 @@ function Maintenance() {
   };
 
   const deleteLog = async (logId) => { 
-    if (confirm('Delete this log?')) { 
+    if (await confirmAction('Delete this log?')) { 
       try {
         await db.delete('maintenance_logs', logId); 
         load(); 

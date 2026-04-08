@@ -4,6 +4,7 @@ import { ShoppingBag, Plus, Trash2, X, AlertTriangle, ChevronDown, Search, Arrow
 import toast from 'react-hot-toast';
 import supabase from '../lib/supabase';
 import db from '../services/db';
+import { confirmAction } from '../services/dialogService';
 
 function OrderBuilder() {
   const location = useLocation();
@@ -120,7 +121,7 @@ function OrderBuilder() {
     const violations = cartItems.filter(c => c.qty < c.minOrder);
     if (violations.length > 0) {
       const names = violations.map(v => `${v.product_name} (min: ${v.minOrder})`).join(', ');
-      if (!confirm(`Warning: ${names} are below minimum order qty. Submit anyway?`)) return;
+      if (!(await confirmAction(`Warning: ${names} are below minimum order qty. Submit anyway?`))) return;
     }
 
     setSaving(true);

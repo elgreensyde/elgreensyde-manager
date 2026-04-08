@@ -5,6 +5,7 @@ import db from '../services/db';
 import lifecycleScheduler from '../services/lifecycleScheduler';
 import weatherService from '../services/weatherService';
 import { checkHarvestSafety } from '../services/harvestSafety';
+import { confirmAction, promptAction } from '../services/dialogService';
 
 const TRAY_STATUSES = ['Sown', 'Germinated', 'Ready', 'Transplanted', 'Completed'];
 const BATCH_STATUSES = ['Nursery', 'Completed', 'Discarded'];
@@ -161,7 +162,7 @@ function Batches() {
   };
 
   const deleteTray = async (id) => {
-    if(confirm('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)')) {
+    if(await confirmAction('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)')) {
       try {
         await lifecycleScheduler.cleanupTasks(id, 'tray');
         await db.delete('trays', id);
@@ -238,7 +239,7 @@ function Batches() {
   };
 
   const deletePlot = async (id) => {
-    if(confirm('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)')) {
+    if(await confirmAction('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)')) {
       try {
         await db.delete('plots', id);
         await lifecycleScheduler.cleanupTasks(id, 'plot');
@@ -289,7 +290,7 @@ function Batches() {
   };
 
   const deleteBatch = async (id) => {
-    if(confirm('Archive this batch and delete all pending tasks?')) {
+    if(await confirmAction('Archive this batch and delete all pending tasks?')) {
       try {
         await db.update('batches', id, { status: 'Archived' });
         await lifecycleScheduler.cleanupTasks(id, 'batch');

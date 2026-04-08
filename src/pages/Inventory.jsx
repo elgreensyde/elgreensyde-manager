@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Package, Search, X, RotateCcw, Edit3, Trash2, ShieldAlert, Droplets, Leaf, AlertTriangle, FlaskConical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
+import { confirmAction } from '../services/dialogService';
 
 const FORMATS = ['Units', 'Grams'];
 const INPUT_TYPES = ['Organic Pesticide', 'Fungicide', 'Fertilizer', 'Soil Amendment'];
@@ -108,7 +109,7 @@ function Inventory() {
   };
 
   const deleteProduct = async (id) => {
-    if (confirm('Delete this product? Warning: Could affect linked transactions.')) {
+    if (await confirmAction('Delete this product? Warning: Could affect linked transactions.')) {
       try {
         await db.delete('inventory', id);
         load();
@@ -161,7 +162,7 @@ function Inventory() {
   };
 
   const deleteInput = async (id) => {
-    if (confirm('Delete this consumable?')) {
+    if (await confirmAction('Delete this consumable?')) {
       try {
         await db.delete('inputs_inventory', id);
         toast.success('Deleted');

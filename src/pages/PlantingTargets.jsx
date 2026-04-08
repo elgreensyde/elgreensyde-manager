@@ -3,6 +3,7 @@ import { Target, Plus, X, AlertTriangle, CheckCircle, TrendingDown, Sprout, Tras
 import toast from 'react-hot-toast';
 import supabase from '../lib/supabase';
 import db from '../services/db';
+import { confirmAction } from '../services/dialogService';
 
 function PlantingTargets() {
   const [targets, setTargets] = useState([]);
@@ -97,7 +98,7 @@ function PlantingTargets() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Remove this planting target?')) return;
+    if (!(await confirmAction('Remove this planting target?'))) return;
     await supabase.from('planting_targets').delete().eq('target_id', id);
     load();
   };

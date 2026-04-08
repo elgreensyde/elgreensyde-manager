@@ -3,6 +3,7 @@ import { Users, Plus, X, Phone, MapPin, Edit3, Trash2, Search, Building2, Calend
 import { useNavigate } from 'react-router-dom';
 import db from '../services/db';
 import supabase from '../lib/supabase';
+import { confirmAction } from '../services/dialogService';
 
 const TYPES = ['Walk-in', 'Wholesale', 'Online'];
 const TABS = ['All', 'Wholesale', 'Walk-in', 'Online'];
@@ -85,7 +86,7 @@ function Customers() {
   };
 
   const handleDelete = async (id) => {
-    if (confirm('Delete this customer? Their order history will be preserved.')) {
+    if (await confirmAction('Delete this customer? Their order history will be preserved.')) {
       await db.delete('customers', id);
       load();
     }

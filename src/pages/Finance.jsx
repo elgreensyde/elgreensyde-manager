@@ -3,6 +3,7 @@ import { DollarSign, Plus, X, ArrowUpRight, ArrowDownRight, TrendingDown, AlertT
 import db from '../services/db';
 import supabase from '../lib/supabase';
 import toast from 'react-hot-toast';
+import { confirmAction } from '../services/dialogService';
 
 const EXPENSE_CATEGORIES = ['Seeds', 'Fertilizers', 'Packaging', 'Equipment', 'Utilities', 'Labor', 'Transport', 'Miscellaneous'];
 
@@ -127,7 +128,7 @@ function Finance() {
   };
 
   const deleteEntry = async (id) => {
-    if (confirm('Delete this ledger entry?')) {
+    if (await confirmAction('Delete this ledger entry?')) {
       await db.delete('financial_ledger', id);
       toast.success('Entry deleted.');
       load();

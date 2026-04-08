@@ -3,6 +3,7 @@ import { Plus, CheckCircle2, Clock, AlertTriangle, X, ArrowRight } from 'lucide-
 import { useNavigate } from 'react-router-dom';
 import db from '../services/db';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
+import { confirmAction } from '../services/dialogService';
 
 function Tasks() {
   const navigate = useNavigate();
@@ -83,7 +84,7 @@ function Tasks() {
   const handleSubmit = async (e) => { e.preventDefault(); await db.insert('tasks', { title: form.title, due_date: form.due_date, priority: form.priority, batch_id: form.batch_id || null, plot_id: form.plot_id || null, status: 'Pending', is_auto_generated: false }); setShowForm(false); setForm({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' }); loadData(); };
 
   const deleteTask = async (taskId) => { 
-    if (confirm('Delete this task?')) { 
+    if (await confirmAction('Delete this task?')) { 
       try {
         await db.delete('tasks', taskId); 
         loadData(); 
