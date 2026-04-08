@@ -436,9 +436,27 @@ function Batches() {
                     </div>
                     <div className="flex flex-col items-end gap-2 ml-3">
                        <span className={`badge text-[10px] ${badgeColor}`}>{tray.status}</span>
-                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => openEditTray(tray)} className="text-gray-400 hover:text-white p-1"><Edit3 size={14}/></button>
-                         <button onClick={() => deleteTray(tray.tray_id || tray.id)} className="text-red-400 hover:text-red-500 p-1"><Trash2 size={14}/></button>
+                       <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             openEditTray(tray); 
+                           }} 
+                           className="p-3 -m-3 text-gray-400 hover:text-white transition-colors"
+                         >
+                           <Edit3 size={20}/>
+                         </button>
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             deleteTray(tray.tray_id || tray.id); 
+                           }} 
+                           className="p-3 -m-3 text-red-400 hover:text-red-500 transition-colors"
+                         >
+                           <Trash2 size={20}/>
+                         </button>
                        </div>
                     </div>
                   </div>
@@ -498,9 +516,27 @@ function Batches() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                        <span className={`badge text-[10px] ${badgeColor}`}>{plot.status}</span>
-                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => openEditPlot(plot)} className="text-gray-400 hover:text-white p-1"><Edit3 size={14}/></button>
-                         <button onClick={() => deletePlot(plot.plot_id || plot.id)} className="text-red-400 hover:text-red-500 p-1"><Trash2 size={14}/></button>
+                       <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             openEditPlot(plot); 
+                           }} 
+                           className="p-3 -m-3 text-gray-400 hover:text-white transition-colors"
+                         >
+                           <Edit3 size={20}/>
+                         </button>
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             deletePlot(plot.plot_id || plot.id); 
+                           }} 
+                           className="p-3 -m-3 text-red-400 hover:text-red-500 transition-colors"
+                         >
+                           <Trash2 size={20}/>
+                         </button>
                        </div>
                     </div>
                   </div>
@@ -557,9 +593,27 @@ function Batches() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                        <span className={`badge text-[10px] ${batch.status === 'Nursery' ? 'bg-amber-500/20 text-amber-400' : 'bg-green-500/20 text-green-400'}`}>{batch.status}</span>
-                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => openEditBatch(batch)} className="text-gray-400 hover:text-white p-1"><Edit3 size={14}/></button>
-                         <button onClick={() => deleteBatch(batch.batch_id || batch.id)} className="text-red-400 hover:text-red-500 p-1"><Trash2 size={14}/></button>
+                       <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             openEditBatch(batch); 
+                           }} 
+                           className="p-3 -m-3 text-gray-400 hover:text-white transition-colors"
+                         >
+                           <Edit3 size={20}/>
+                         </button>
+                         <button 
+                           onClick={(e) => { 
+                             e.preventDefault();
+                             e.stopPropagation(); 
+                             deleteBatch(batch.batch_id || batch.id); 
+                           }} 
+                           className="p-3 -m-3 text-red-400 hover:text-red-500 transition-colors"
+                         >
+                           <Trash2 size={20}/>
+                         </button>
                        </div>
                     </div>
                   </div>
