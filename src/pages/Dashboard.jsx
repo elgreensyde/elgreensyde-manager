@@ -34,17 +34,18 @@ function Dashboard() {
       await generatePreventiveAlerts();
       const { default: weatherService } = await import('../services/weatherService');
       
-      const [t, b, c, i, p, h, w, away, sessions, trays] = await Promise.all([
+      const [t, b, c, i, p, h, w, away, sessions, trays, weatherHourly] = await Promise.all([
         db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
         db.getAll('inventory'), db.getAll('plots'), db.getAll('harvest_logs'),
         weatherService.getForecast(),
         db.getAll('away_periods'),
         db.getAll('monitoring_sessions'),
-        db.getAll('trays')
+        db.getAll('trays'),
+        weatherService.getHourlyForecast()
       ]);
       
       const todayStr = new Date().toISOString().split('T')[0];
-      const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || [], trays || [], sessions || []);
+      const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || [], trays || [], sessions || [], weatherHourly);
       
       // Rule 8: Overdue Escalation (Passive)
       // If a task is Overdue for 2+ days, escalate its priority to 'Critical'

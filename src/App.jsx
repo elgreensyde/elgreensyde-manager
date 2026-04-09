@@ -20,6 +20,7 @@ import { Toaster } from 'react-hot-toast';
 import awayService from './services/awayService';
 import notificationService from './services/notificationService';
 import supabase from './lib/supabase';
+import SmartAssistant from './components/SmartAssistant';
 
 function GlobalDialog() {
   const [data, setData] = useState(null);
@@ -227,6 +228,8 @@ function App() {
           </button>
         </div>
       </nav>
+
+      <SmartAssistant />
     </div>
   );
 }

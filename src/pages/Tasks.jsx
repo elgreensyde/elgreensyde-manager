@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import db from '../services/db';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
 import { confirmAction } from '../services/dialogService';
+import supabase from '../lib/supabase';
 
 function Tasks() {
   const navigate = useNavigate();
@@ -73,11 +74,22 @@ function Tasks() {
 
   const completeTask = async (taskId) => { 
     try {
+      const taskToComplete = tasks.find(t => t.id === taskId || t.task_id === taskId);
+      
+      // Auto-deduct inventory Phase 5 Logic
+      if (taskToComplete && taskToComplete.title) {
+         if (taskToComplete.title.includes('Prep Bed Nutrition')) {
+            await supabase.rpc('decrement_inventory', { target_sku: 'FERT-14-14-14', amount_to_deduct: 0.045 });
+         } else if (taskToComplete.title.includes('Regeneration Feeding')) {
+            await supabase.rpc('decrement_inventory', { target_sku: 'FERT-46-0-0', amount_to_deduct: 0.018 });
+         }
+      }
+
       await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() }); 
       loadData(); 
     } catch (err) {
       alert(err.message);
-      console.error(err);
+      console.error('Error completing task:', err);
     }
   };
 

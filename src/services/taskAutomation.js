@@ -1,6 +1,7 @@
 // Translates business logic rules into auto-generated tasks passively.
+import weatherService from './weatherService';
 
-export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_logs, inventory, crops, trays = [], monitoring_sessions = []) {
+export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_logs, inventory, crops, trays = [], monitoring_sessions = [], weatherHourly = null) {
   const newTasks = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -150,5 +151,58 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
   // Or better, we can modify the task table here if we had db access, 
   // but this function is pure. Dashboard will handle priority bumping via existingTasks check.
   
+  // Rule 9: Weather Defense Rule (Agronomic Upgrade)
+  if (weatherHourly) {
+    const risk = weatherService.analyzeDiseaseRisk(weatherHourly);
+    if (risk.riskLevel === 'CRITICAL') {
+      const titleStr = 'URGENT: Scout beds for Downy Mildew';
+      if (!taskExists(titleStr)) {
+        newTasks.push({
+          title: titleStr,
+          due_date: new Date().toISOString().split('T')[0],
+          priority: 'High',
+          status: 'Pending',
+          is_auto_generated: true
+        });
+      }
+    }
+  }
+
+  // Rule 10: Land Prep Nutrient Incorporation
+  plots.filter(p => p.status === 'Prepped').forEach(plot => {
+    const titleStr = `Prep Bed Nutrition: Incorporate 10g/sqm of Complete (14-14-14) into top 6 inches for ${plot.plot_code || 'plot'}`;
+    if (!taskExists('Prep Bed Nutrition: Incorporate 10g/sqm of Complete')) {
+      newTasks.push({
+        title: titleStr,
+        due_date: new Date().toISOString().split('T')[0],
+        priority: 'Medium',
+        status: 'Pending',
+        plot_id: plot.plot_id || plot.id,
+        is_auto_generated: true
+      });
+    }
+  });
+
+  // Rule 11: Regeneration Feeding Rule
+  // Find completed wholesale harvest tasks
+  existingTasks.filter(t => t.status === 'Completed' && t.title.toLowerCase().includes('harvest') && t.completed_at).forEach(task => {
+    const completedDate = new Date(task.completed_at);
+    completedDate.setHours(0,0,0,0);
+    const daysElapsed = Math.floor((today - completedDate) / 86400000);
+    
+    if (daysElapsed === 21) {
+      const titleStr = `Regeneration Feeding: Dissolve 4g/sqm of Urea (46-0-0) in water and apply as a soil drench. DO NOT let liquid touch foliage.`;
+      if (!taskExists('Regeneration Feeding: Dissolve 4g/sqm')) {
+        newTasks.push({
+          title: titleStr,
+          due_date: new Date().toISOString().split('T')[0],
+          priority: 'High',
+          status: 'Pending',
+          is_auto_generated: true
+        });
+      }
+    }
+  });
+
   return newTasks;
 }

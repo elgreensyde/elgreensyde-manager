@@ -1,0 +1,30 @@
+{
+  "batches": {
+    "title": "Land Preparation & Planting",
+    "protocols": [
+      "Soil Prep: Incorporate 1-2 inches of compost into the top 6-8 inches of the raised bed.",
+      "Base Nutrition: Broadcast 10g/sqm of Complete (14-14-14) fertilizer.",
+      "Dimensions: Standardize bed width to 0.9 meters.",
+      "Spacing: Plant 3 rows spaced 30cm apart, with plants every 15cm.",
+      "Rotation Warning: NEVER plant basil in the same bed in consecutive seasons (Fusarium risk)."
+    ]
+  },
+  "monitoring": {
+    "title": "IPM & Disease Defense",
+    "protocols": [
+      "Fungal Threat: Downy Mildew triggers at >85% humidity for >4 hours. Ensure wide spacing.",
+      "Trap Crop (Pull): Check perimeter Nasturtiums for Aphid and Whitefly colonization.",
+      "Soil Defense (Anchor): Ensure French Marigolds are planted at bed ends to suppress nematodes.",
+      "Scent Shield (Push): Verify Chives are growing down the center lines to mask basil scent."
+    ]
+  },
+  "pos": {
+    "title": "Post-Harvest & Wholesale",
+    "protocols": [
+      "Harvest Timing: Cut late afternoon or very early morning.",
+      "Cooling: Immediately transfer stems to 12°C - 15°C (53°F - 59°F).",
+      "Danger: DO NOT drop below 10°C. Cellular membranes will collapse causing blackening.",
+      "Packaging: Use micro-perforated bags to prevent moisture loss."
+    ]
+  }
+}

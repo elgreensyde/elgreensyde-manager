@@ -47,7 +47,7 @@ const weatherService = {
 
       // 2. Refresh from Open-Meteo if expired or missing
       console.log('Fetching fresh weather for Valencia City...');
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,relative_humidity_2m_max&timezone=Asia%2FManila`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,relative_humidity_2m&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max,relative_humidity_2m_max&timezone=Asia%2FManila`;
       
       const response = await fetch(url);
       if (!response.ok) throw new Error('Weather API unreachable');
@@ -55,22 +55,36 @@ const weatherService = {
       const rawData = await response.json();
       if (!rawData.daily) throw new Error('Invalid weather data format');
 
-      const forecast = rawData.daily;
       const expiresAt = new Date(Date.now() + CACHE_DURATION_MS).toISOString();
 
-      // 3. Force push to DB cache
+      // 3. Force push to DB cache (save the entire rawObject to preserve both daily and hourly)
       await supabase.from('weather_cache').upsert({
         lat: LAT,
         lon: LON,
-        data: forecast,
+        data: rawData,
         updated_at: new Date().toISOString(),
         expires_at: expiresAt
       }, { onConflict: 'lat,lon' });
 
-      return forecast;
+      return rawData.daily;
     } catch (err) {
       console.error('weatherService.getForecast():', err.message);
       // Fallback for offline or API issues
+      return null;
+    }
+  },
+
+  async getHourlyForecast() {
+    try {
+      const { data: cache } = await supabase.from('weather_cache').select('data').eq('lat', LAT).eq('lon', LON).maybeSingle();
+      if (cache && cache.data && cache.data.hourly) return cache.data.hourly;
+      
+      // trigger fetch
+      await this.getForecast();
+      const { data: cache2 } = await supabase.from('weather_cache').select('data').eq('lat', LAT).eq('lon', LON).maybeSingle();
+      return cache2?.data?.hourly || null;
+    } catch(err) {
+      console.error('getHourlyForecast error', err);
       return null;
     }
   },
@@ -143,6 +157,39 @@ const weatherService = {
     }
 
     return { safe: true };
+  },
+
+  calculateVPD(tempC, humidityPct) {
+    // SVP = Saturation Vapor Pressure in kPa
+    const svp = 0.61078 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+    // AVP = Actual Vapor Pressure
+    const avp = svp * (humidityPct / 100);
+    return Math.max(0, svp - avp).toFixed(2); // VPD in kPa
+  },
+
+  analyzeDiseaseRisk(hourlyData) {
+    if (!hourlyData || !hourlyData.relative_humidity_2m) return { riskLevel: 'LOW', trigger: 'No Data' };
+    
+    let consecutiveHours = 0;
+    const humidityArr = hourlyData.relative_humidity_2m;
+    const tempArr = hourlyData.temperature_2m;
+
+    for (let i = 0; i < humidityArr.length; i++) {
+       const rh = humidityArr[i];
+       const temp = tempArr ? tempArr[i] : null;
+
+       // Formula: RH >= 85 for >7.5 hours (we use 8 hours). AND temp between 15 and 25
+       if (rh >= 85 && (temp === null || (temp >= 15 && temp <= 25))) {
+          consecutiveHours++;
+          if (consecutiveHours >= 8) {
+             return { riskLevel: 'CRITICAL', trigger: 'Prolonged Leaf Wetness (>85% RH for 8+ hrs)' };
+          }
+       } else {
+          consecutiveHours = 0;
+       }
+    }
+
+    return { riskLevel: 'LOW', trigger: 'Safe' };
   }
 };
 

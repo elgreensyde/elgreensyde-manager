@@ -7,6 +7,9 @@ import weatherService from '../services/weatherService';
 import { checkHarvestSafety } from '../services/harvestSafety';
 import { confirmAction, promptAction } from '../services/dialogService';
 
+import BedVisualizer from '../components/BedVisualizer';
+import DosingCalculator from '../components/DosingCalculator';
+
 const TRAY_STATUSES = ['Sown', 'Germinated', 'Ready', 'Transplanted', 'Completed'];
 const BATCH_STATUSES = ['Nursery', 'Completed', 'Discarded'];
 const PLOT_STATUSES = ['Active', 'Ready to Clear', 'Cleared', 'Resting'];
@@ -90,9 +93,13 @@ function Batches() {
   const calculateTargetDate = (cropId, startDateStr) => {
     if (!cropId || !startDateStr) return '';
     const crop = getCrop(cropId);
-    if (!crop || !crop.rooting_or_germ_days) return '';
+    if (!crop) return '';
+    
+    // Sweet Basil Override (14 days germ/rooting)
+    const daysOffset = (crop.common_name === 'Sweet Basil (Ocimum basilicum)') ? 14 : (crop.rooting_or_germ_days || 0);
+
     const date = new Date(startDateStr);
-    date.setDate(date.getDate() + crop.rooting_or_germ_days);
+    date.setDate(date.getDate() + daysOffset);
     return date.toISOString().split('T')[0];
   };
 
@@ -179,6 +186,17 @@ function Batches() {
     e.preventDefault();
     if (!activeTrayForTransplant || !transplantForm.target_plot_id) return;
     
+    // FUSARIUM GUARD
+    const targetCrop = getCrop(activeTrayForTransplant.crop_id);
+    const targetPlot = plots.find(p => p.plot_id === transplantForm.target_plot_id || p.id === transplantForm.target_plot_id);
+    const previousCrop = targetPlot ? getCrop(targetPlot.crop_id) : null;
+
+    if (targetCrop?.common_name.includes('Sweet Basil') && previousCrop?.common_name.includes('Sweet Basil')) {
+      toast.error('CRITICAL: Cannot plant Basil in consecutive seasons. High risk of Fusarium Wilt.', { duration: 5000 });
+      // We block the save by just returning early
+      return;
+    }
+    
     try {
       // 1. Mark tray as Transplanted/Completed
       await db.update('trays', activeTrayForTransplant.tray_id || activeTrayForTransplant.id, { 
@@ -213,6 +231,17 @@ function Batches() {
   // --- PLOT HANDLERS ---
   const handleCreatePlot = async (e) => {
     e.preventDefault();
+
+    // FUSARIUM GUARD
+    const newCrop = getCrop(plotForm.crop_id);
+    const existingPlot = editingPlotId ? plots.find(p => p.plot_id === editingPlotId || p.id === editingPlotId) : null;
+    const previousCrop = existingPlot ? getCrop(existingPlot.crop_id) : null;
+
+    if (newCrop?.common_name.includes('Sweet Basil') && previousCrop?.common_name.includes('Sweet Basil') && newCrop.id !== previousCrop.id) {
+       toast.error('CRITICAL: Cannot plant Basil in consecutive seasons. High risk of Fusarium Wilt.', { duration: 5000 });
+       return;
+    }
+
     try {
       const dataToSave = { ...plotForm };
       if (!dataToSave.crop_id) dataToSave.crop_id = null;
@@ -496,6 +525,11 @@ function Batches() {
 
           {/* PLOT MONITOR (Pipeline A) */}
           <div className={`space-y-4 ${activeTab === 'plots' ? 'block animate-fade-in' : 'hidden'}`}>
+             <div className="flex flex-col md:flex-row gap-4 mb-4 mt-2">
+                 <BedVisualizer />
+                 <DosingCalculator />
+             </div>
+
             <div className="flex flex-wrap items-center justify-between mb-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-green-600 flex items-center gap-2"><LayoutDashboard size={16} /> Plot Monitor <span className="text-xs font-normal text-gray-500 ml-2 hidden sm:inline">(Basil & Parsley, Cut-and-come-again)</span></h2>
               <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={() => {setEditingPlotId(null); setPlotForm({...defaultPlotForm, plot_code: generateRandomBedCode()}); setShowPlotModal(true);}}><Plus size={14}/> Add Plot</button>
