@@ -26,3 +26,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 4. RLS Bypass Policies for Public Access
+ALTER TABLE flagged_issues ENABLE ROW LEVEL SECURITY;
+ALTER TABLE preventive_alerts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public Read" ON flagged_issues;
+DROP POLICY IF EXISTS "Public Insert" ON flagged_issues;
+DROP POLICY IF EXISTS "Public Update" ON flagged_issues;
+CREATE POLICY "Public Read" ON flagged_issues FOR SELECT USING (true);
+CREATE POLICY "Public Insert" ON flagged_issues FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Update" ON flagged_issues FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public Read Alerts" ON preventive_alerts;
+DROP POLICY IF EXISTS "Public Insert Alerts" ON preventive_alerts;
+DROP POLICY IF EXISTS "Public Update Alerts" ON preventive_alerts;
+CREATE POLICY "Public Read Alerts" ON preventive_alerts FOR SELECT USING (true);
+CREATE POLICY "Public Insert Alerts" ON preventive_alerts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Update Alerts" ON preventive_alerts FOR UPDATE USING (true);
+
+

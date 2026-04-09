@@ -3,6 +3,8 @@ import { Plus, Search, Calendar, MapPin, Sprout as SproutIcon, Scissors, LayoutD
 
 import toast from 'react-hot-toast';
 import db from '../services/db';
+import supabase from '../lib/supabase';
+
 import lifecycleScheduler from '../services/lifecycleScheduler';
 import weatherService from '../services/weatherService';
 import { checkHarvestSafety } from '../services/harvestSafety';

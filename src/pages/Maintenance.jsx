@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { ShieldAlert, Beaker, Search, Calendar, Plus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
+import supabase from '../lib/supabase';
+
 import { confirmAction } from '../services/dialogService';
 function Maintenance() {
   const [logs, setLogs] = useState([]);
