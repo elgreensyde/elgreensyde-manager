@@ -36,7 +36,7 @@ function OrderBuilder() {
         .in('orders.status', ['Pending', 'Confirmed', 'Packed'])
     ]);
 
-    setCustomers((custResp || []).filter(c => c.type === 'Wholesale'));
+    setCustomers(custResp || []);
     setInventory(invResp || []);
     setPricing(pricingResp.data || []);
     setActiveOrders(ordersResp.data || []);

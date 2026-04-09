@@ -78,9 +78,10 @@ function Tasks() {
       
       // Auto-deduct inventory Phase 5 Logic
       if (taskToComplete && taskToComplete.title) {
-         if (taskToComplete.title.includes('Prep Bed Nutrition')) {
+         const titleLower = taskToComplete.title.toLowerCase();
+         if (titleLower.includes('prep bed nutrition')) {
             await supabase.rpc('decrement_inventory', { target_sku: 'FERT-14-14-14', amount_to_deduct: 0.045 });
-         } else if (taskToComplete.title.includes('Regeneration Feeding')) {
+         } else if (titleLower.includes('regeneration feeding')) {
             await supabase.rpc('decrement_inventory', { target_sku: 'FERT-46-0-0', amount_to_deduct: 0.018 });
          }
       }

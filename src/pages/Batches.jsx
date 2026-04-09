@@ -385,15 +385,32 @@ function Batches() {
     e.preventDefault();
     if (!activePlotForHarvest) return;
     try {
+      const yieldWeight = parseFloat(harvestForm.yield_weight_g) || 0;
       await db.insert('harvest_logs', {
          plot_id: activePlotForHarvest.id || activePlotForHarvest.plot_id,
          harvest_date: harvestForm.harvest_date,
-         yield_weight_g: parseFloat(harvestForm.yield_weight_g) || 0,
+         yield_weight_g: yieldWeight,
          cull_weight_g: parseFloat(harvestForm.cull_weight_g) || 0,
          harvest_outcome: harvestForm.harvest_outcome || 'Safe',
          notes: harvestForm.notes
       });
-      toast.success('Harvest logged successfully!');
+
+      // Auto-update to inventory (Convert grams to KG)
+      if (yieldWeight > 0) {
+         const crop = getCrop(activePlotForHarvest.crop_id);
+         const kgWeight = yieldWeight / 1000;
+         const inventory = await db.getAll('inventory') || [];
+         const existing = crop ? inventory.find(i => i.product_name.toLowerCase().includes(crop.common_name.toLowerCase())) : null;
+         
+         if (existing) {
+             await db.update('inventory', existing.sku_id || existing.id, { current_stock: parseFloat(existing.current_stock) + kgWeight });
+         } else if (crop) {
+             const tempSku = `HARV-${crop.common_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random() * 900) + 100}`;
+             await db.insert('inventory', { sku_code: tempSku, product_name: `${crop.common_name} (Fresh)`, sales_format: 'Kg', current_stock: kgWeight, restock_alert_level: 1 });
+         }
+      }
+
+      toast.success('Harvest logged & Inventory updated!');
       setShowHarvestModal(false);
       setHarvestForm(defaultHarvestForm);
       setActivePlotForHarvest(null);
