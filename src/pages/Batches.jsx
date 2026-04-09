@@ -899,6 +899,16 @@ function Batches() {
                 </div>
               </div>
 
+              {getCrop(activeTrayForTransplant.crop_id)?.spacing_cm && (
+                <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-xl mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-green-500 mb-1">🌱 Planting Guide</p>
+                  <p className="text-xs text-green-200"><span className="font-semibold text-green-400">Spacing:</span> {getCrop(activeTrayForTransplant.crop_id).spacing_cm}</p>
+                  {getCrop(activeTrayForTransplant.crop_id)?.soil_mix?.components && (
+                    <p className="text-xs text-green-200 mt-1"><span className="font-semibold text-green-400">Layout:</span> {getCrop(activeTrayForTransplant.crop_id).soil_mix.components}</p>
+                  )}
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-bold text-blue-400 block mb-1">Destination Physical Plot *</label>
                 <select required value={transplantForm.target_plot_id} onChange={e => setTransplantForm({...transplantForm, target_plot_id: e.target.value})} className="input-field w-full border-blue-500/20 bg-blue-500/5">
@@ -972,6 +982,14 @@ function Batches() {
                     {crops.map(c => <option key={c.id} value={c.id}>{c.common_name}</option>)}
                   </select>
                 </div>
+              )}
+              
+              {plotForm.status === 'Active' && plotForm.crop_id && getCrop(plotForm.crop_id)?.spacing_cm && (
+                 <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-xl mt-2">
+                   <p className="text-[10px] font-bold uppercase tracking-wider text-green-500 mb-1">🌱 Planting Guide</p>
+                   <p className="text-xs text-green-200"><span className="font-semibold text-green-400">Spacing:</span> {getCrop(plotForm.crop_id).spacing_cm}</p>
+                   {getCrop(plotForm.crop_id).soil_mix?.components && <p className="text-xs text-green-200 mt-1"><span className="font-semibold text-green-400">Layout:</span> {getCrop(plotForm.crop_id).soil_mix.components}</p>}
+                 </div>
               )}
               
               <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center border-green-500/50">{editingPlotId ? 'Update Plot' : 'Save Plot Record'}</button>
@@ -1131,6 +1149,14 @@ function Batches() {
                   <p className="text-[10px] text-themed-primary leading-tight">
                     {safetyAssessment?.reasons[0] || 'Safety warning logged with this harvest.'}
                   </p>
+                </div>
+              )}
+
+              {activePlotForHarvest?.crop_id && (getCrop(activePlotForHarvest.crop_id)?.harvest_method || getCrop(activePlotForHarvest.crop_id)?.postharvest_notes) && (
+                <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl mb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-500 mb-1">📋 Harvest Protocol</p>
+                  {getCrop(activePlotForHarvest.crop_id).harvest_method && <p className="text-xs text-blue-200 mb-1"><span className="font-semibold text-blue-400">Method:</span> {getCrop(activePlotForHarvest.crop_id).harvest_method}</p>}
+                  {getCrop(activePlotForHarvest.crop_id).postharvest_notes && <p className="text-xs text-blue-200"><span className="font-semibold text-blue-400">Postharvest:</span> {getCrop(activePlotForHarvest.crop_id).postharvest_notes}</p>}
                 </div>
               )}
 

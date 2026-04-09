@@ -35,7 +35,8 @@ const DIAGNOSTIC_TREE = {
   'None': [],
   'Invertebrate Pests': ['Aphids/Honeydew', 'Whiteflies', 'Root-Knot Nematodes'],
   'Fungal/Foliar Pathogens': ['Grey Fuzz (Downy Mildew)', 'Bacterial Leaf Spot'],
-  'Soil/Root Health': ['Sudden Wilting (Fusarium Risk)']
+  'Soil/Root Health': ['Sudden Wilting (Fusarium Risk)'],
+  'Nutrient Deficiency': ['Pale Leaves/Low Vigor (Nitrogen Leaching)']
 };
 
 
@@ -268,11 +269,17 @@ function Monitoring() {
       
       // DIAGNOSTIC MAPPING FOR AUTO-TASKS
       if (issue.specific_symptom === 'Grey Fuzz (Downy Mildew)') {
-        titleStr = `CRITICAL: Apply Copper Fungicide Drench to ${issue.description.split(': ')[1].split(' | ')[0]}`;
-      } else if (issue.specific_symptom === 'Aphids/Honeydew') {
+        titleStr = `CRITICAL: Increase spacing and stop overhead irrigation for ${issue.description.split(': ')[1].split(' | ')[0]} (Downy Mildew)`;
+      } else if (issue.specific_symptom === 'Aphids/Honeydew' || issue.specific_symptom === 'Whiteflies') {
         titleStr = `IPM: Cull infested Nasturtium trap crops near ${issue.description.split(': ')[1].split(' | ')[0]}`;
       } else if (issue.specific_symptom === 'Sudden Wilting (Fusarium Risk)') {
-        titleStr = `BIOSECURITY: Quarantine and Test ${issue.description.split(': ')[1].split(' | ')[0]} for Fusarium`;
+        titleStr = `BIOSECURITY: Quarantine and check drainage for ${issue.description.split(': ')[1].split(' | ')[0]} (Fusarium)`;
+      } else if (issue.specific_symptom === 'Root-Knot Nematodes') {
+        titleStr = `IPM: Inspect French Marigold root defenders near ${issue.description.split(': ')[1].split(' | ')[0]}`;
+      } else if (issue.specific_symptom === 'Bacterial Leaf Spot') {
+        titleStr = `PATHOGEN: Monitor leaf wetness and protect ${issue.description.split(': ')[1].split(' | ')[0]} from monsoon rains`;
+      } else if (issue.specific_symptom === 'Pale Leaves/Low Vigor (Nitrogen Leaching)') {
+        titleStr = `NUTRITION: Sidedress 15-30 lbs N/acre or liquid feed ${issue.description.split(': ')[1].split(' | ')[0]}`;
       }
 
       const normalizedTitle = titleStr.toLowerCase().trim();
