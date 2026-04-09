@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   Eye, ClipboardCheck, AlertTriangle, Check, X, Leaf, Bug, Droplets,
-  Beaker, History, ChevronRight, Sprout, Zap, FlaskConical, Plus, Clock
+  Beaker, History, ChevronRight, Sprout, Zap, FlaskConical, Plus, Clock, Search
 } from 'lucide-react';
+
 import toast from 'react-hot-toast';
 import db from '../services/db';
 import supabase from '../lib/supabase';
@@ -30,13 +31,14 @@ const DAILY_SCAN_QUESTIONS = [
   { id: 'growth_rate', question: 'Growth on track for season?', icon: Sprout, flag: false },
 ];
 
-const CROP_CHECK_QUESTIONS = [
-  { key: 'leaf_color_normal', q: 'Leaf color normal?', severity: false },
-  { key: 'new_growth_present', q: 'New growth visible?', severity: false },
-  { key: 'pest_damage', q: 'Pest damage visible?', severity: true },
-  { key: 'disease_signs', q: 'Disease symptoms (spots, mold)?', severity: true },
-  { key: 'soil_moisture', q: 'Soil moisture adequate?', severity: false },
-];
+const DIAGNOSTIC_TREE = {
+  'None': [],
+  'Invertebrate Pests': ['Aphids/Honeydew', 'Whiteflies', 'Root-Knot Nematodes'],
+  'Fungal/Foliar Pathogens': ['Grey Fuzz (Downy Mildew)', 'Bacterial Leaf Spot'],
+  'Soil/Root Health': ['Sudden Wilting (Fusarium Risk)']
+};
+
+
 
 const QUICK_LOG_TYPES = [
   { id: 'spray', label: 'Spray Applied', icon: FlaskConical, color: '#3b82f6', category: 'Pest Treatment' },
@@ -62,6 +64,9 @@ function Monitoring() {
   const [targetChecks, setTargetChecks] = useState([]); // [{type, id, name, crop_id, answers, flagged}]
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [targetAnswers, setTargetAnswers] = useState({});
+  const [diagnosticCategory, setDiagnosticCategory] = useState('');
+  const [diagnosticSymptom, setDiagnosticSymptom] = useState('');
+
 
   // Quick Log state
   const [quickLogType, setQuickLogType] = useState(null); // spray | feed | issue
@@ -166,6 +171,8 @@ function Monitoring() {
     setTargetAnswers({});
     setSelectedTarget(null);
     setSessionSummary(null);
+    setDiagnosticCategory('');
+    setDiagnosticSymptom('');
     setStep('nursery');
   };
 
@@ -203,31 +210,24 @@ function Monitoring() {
       // Per-target checks
       const createdIssues = [];
       for (const tc of targetChecks) {
-        for (const [qKey, answer] of Object.entries(tc.answers || {})) {
-          const isFlagged = answer === 'Yes' || answer === 'Moderate' || answer === 'Severe';
-          responses.push({
-            session_id: session.session_id,
-            target_type: tc.type,
-            target_id: tc.id,
-            crop_id: tc.crop_id,
-            section: 'Crop Check',
-            question: qKey,
-            answer,
-            flagged: isFlagged
-          });
-        }
-        const isTargetFlagged = Object.values(tc.answers || {}).some(a => ['Yes', 'Moderate', 'Severe'].includes(a));
+        // V3.2: Check if an active threat was diagnosed
+        const isTargetFlagged = tc.diagnosticCategory && tc.diagnosticCategory !== 'None';
+        
         if (isTargetFlagged) {
-          const severity = Object.values(tc.answers || {}).includes('Severe') ? 'High'
-            : Object.values(tc.answers || {}).includes('Moderate') ? 'Medium' : 'Low';
+          // Rule-based severity induction
+          const severity = (tc.diagnosticCategory === 'Soil/Root Health' || tc.diagnosticSymptom === 'Grey Fuzz (Downy Mildew)') ? 'High' : 'Medium';
+          
           const issueRow = {
             session_id: session.session_id,
             target_type: tc.type,
             target_id: tc.id,
             crop_id: tc.crop_id,
-            issue_type: 'Crop Issue',
+            issue_type: tc.diagnosticCategory,
+            threat_category: tc.diagnosticCategory,
+            specific_symptom: tc.diagnosticSymptom,
+            is_active_threat: true,
             severity,
-            description: `${tc.name}: ${Object.entries(tc.answers || {}).filter(([, v]) => ['Yes', 'Moderate', 'Severe'].includes(v)).map(([k, v]) => `${k}: ${v}`).join(', ')}`,
+            description: `DIAGNOSIS: ${tc.diagnosticSymptom} | ${tc.name} flagged during ${sessionType}`,
             status: 'Open'
           };
           await supabase.from('flagged_issues').insert(issueRow);
@@ -235,25 +235,18 @@ function Monitoring() {
         }
       }
 
-      if (responses.length > 0) {
-        await supabase.from('checklist_responses').insert(responses);
-      }
-
-      // Cross-tray pattern check
-      const flaggedBatches = targetChecks.filter(tc =>
-        tc.type === 'batch' && Object.values(tc.answers || {}).some(a => ['Yes', 'Severe'].includes(a))
-      );
-      if (flaggedBatches.length >= 3) {
-        toast('⚠️ Cross-batch pattern — check nursery-wide conditions!', { icon: '🔍', duration: 6000 });
+      // Record any environmental alerts
+      const diagnosedIssueCount = createdIssues.length;
+      if (diagnosedIssueCount >= 3) {
+        toast('⚠️ Multiple targets diagnosed — check nursery-wide conditions!', { icon: '🔍', duration: 6000 });
         await supabase.from('flagged_issues').insert({
           session_id: session.session_id,
           issue_type: 'Environmental',
+          description: `CROSS-ZONE PATTERN: ${diagnosedIssueCount} targets flagged with health issues. Check humidity/ventilation.`,
           severity: 'High',
-          description: `${flaggedBatches.length} batches flagged with similar symptoms. Possible nursery-wide issue.`,
           status: 'Open'
         });
       }
-
       setSessionSummary({ session, createdIssues, responseCount: responses.length });
       setStep('summary');
       load();
@@ -261,6 +254,7 @@ function Monitoring() {
       console.error(err);
       toast.error('Failed to save session. Check Supabase tables are created.');
     }
+
   };
 
   const createTasksFromFlags = async () => {
@@ -270,7 +264,17 @@ function Monitoring() {
     let createdCount = 0;
 
     for (const issue of sessionSummary.createdIssues) {
-      const titleStr = `Resolve: ${issue.description.substring(0, 80)}`;
+      let titleStr = `Resolve: ${issue.description.substring(0, 80)}`;
+      
+      // DIAGNOSTIC MAPPING FOR AUTO-TASKS
+      if (issue.specific_symptom === 'Grey Fuzz (Downy Mildew)') {
+        titleStr = `CRITICAL: Apply Copper Fungicide Drench to ${issue.description.split(': ')[1].split(' | ')[0]}`;
+      } else if (issue.specific_symptom === 'Aphids/Honeydew') {
+        titleStr = `IPM: Cull infested Nasturtium trap crops near ${issue.description.split(': ')[1].split(' | ')[0]}`;
+      } else if (issue.specific_symptom === 'Sudden Wilting (Fusarium Risk)') {
+        titleStr = `BIOSECURITY: Quarantine and Test ${issue.description.split(': ')[1].split(' | ')[0]} for Fusarium`;
+      }
+
       const normalizedTitle = titleStr.toLowerCase().trim();
       
       const exists = existingTasks.some(t => 
@@ -282,7 +286,7 @@ function Monitoring() {
         await db.insert('tasks', {
           title: titleStr,
           due_date: new Date().toISOString().split('T')[0],
-          priority: issue.severity === 'High' ? 'High' : 'Medium',
+          priority: 'High', // Forced V3.2 Requirement
           status: 'Pending',
           is_auto_generated: true,
           [issue.target_type === 'plot' ? 'plot_id' : 'batch_id']: issue.target_id,
@@ -653,7 +657,8 @@ function Monitoring() {
                 )}
                 {plots.filter(p => p.status === 'Active').map(plot => {
                   const checked = targetChecks.find(tc => tc.id === plot.plot_id);
-                  const hasFlagged = checked && Object.values(checked.answers || {}).some(a => ['Yes', 'Moderate', 'Severe'].includes(a));
+                  const hasFlagged = checked && checked.diagnosticCategory && checked.diagnosticCategory !== 'None';
+
                   return (
                     <button key={plot.plot_id} onClick={() => {
                       if (!checked) { setSelectedTarget({ type: 'plot', id: plot.plot_id, name: plot.plot_code, crop_id: plot.crop_id }); setTargetAnswers({}); }
@@ -682,7 +687,8 @@ function Monitoring() {
                 )}
                 {batches.map(batch => {
                   const checked = targetChecks.find(tc => tc.id === batch.batch_id);
-                  const hasFlagged = checked && Object.values(checked.answers || {}).some(a => ['Yes', 'Moderate', 'Severe'].includes(a));
+                  const hasFlagged = checked && checked.diagnosticCategory && checked.diagnosticCategory !== 'None';
+
                   return (
                     <button key={batch.batch_id} onClick={() => {
                       if (!checked) { setSelectedTarget({ type: 'batch', id: batch.batch_id, name: batch.batch_code, crop_id: batch.crop_id }); setTargetAnswers({}); }
@@ -754,38 +760,66 @@ function Monitoring() {
               <button onClick={() => setSelectedTarget(null)} className="p-1"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
             </div>
 
-            <div className="space-y-3">
-              {CROP_CHECK_QUESTIONS.map(item => {
-                const opts = item.severity ? ['No', 'Mild', 'Moderate', 'Severe'] : ['Yes', 'No'];
-                return (
-                  <div key={item.key} className="glass-card-static p-4 rounded-2xl">
-                    <p className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-primary)' }}>{item.q}</p>
-                    <div className="flex gap-2">
-                      {opts.map(ans => (
-                        <button key={ans} onClick={() => setTargetAnswers(p => ({ ...p, [item.key]: ans }))}
-                          className="flex-1 py-3 rounded-xl text-xs font-bold transition-all active:scale-95"
-                          style={{
-                            background: targetAnswers[item.key] === ans
-                              ? (['Moderate', 'Severe'].includes(ans) ? '#ef4444' : ans === 'Mild' ? '#f59e0b' : '#10b981')
-                              : 'var(--color-bg-card)',
-                            color: targetAnswers[item.key] === ans ? 'white' : 'var(--color-text-secondary)',
-                            border: `1px solid ${targetAnswers[item.key] === ans ? 'transparent' : 'var(--color-border)'}`
-                          }}>
-                          {ans}
-                        </button>
-                      ))}
-                    </div>
+            <div className="space-y-4">
+              <div className="glass-card-static p-6 rounded-3xl border-2 border-emerald-500/20 shadow-sm bg-emerald-500/5">
+                <div className="flex items-center gap-2 mb-5">
+                   <div className="p-2 bg-emerald-500 rounded-xl text-white"><AlertTriangle size={18}/></div>
+                   <div>
+                     <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Step 1: Classification</p>
+                     <p className="text-[10px] text-emerald-500/70">Define the primary threat category</p>
+                   </div>
+                </div>
+                
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Threat Category</label>
+                    <select 
+                      value={diagnosticCategory} 
+                      onChange={e => { setDiagnosticCategory(e.target.value); setDiagnosticSymptom(''); }} 
+                      className="input-field w-full py-4 text-sm font-bold border-emerald-500/30 shadow-inner"
+                    >
+                      {Object.keys(DIAGNOSTIC_TREE).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
                   </div>
-                );
-              })}
+                  
+                  {diagnosticCategory && diagnosticCategory !== 'None' && (
+                    <div className="animate-in fade-in slide-in-from-top-4 duration-500">
+                      <div className="h-px bg-emerald-500/10 mb-5" />
+                      <div className="flex items-center gap-2 mb-5">
+                         <div className="p-2 bg-amber-500 rounded-xl text-white"><Search size={18}/></div>
+                         <div>
+                           <p className="text-xs font-bold uppercase tracking-widest text-amber-600">Step 2: Specific Symptom</p>
+                           <p className="text-[10px] text-amber-500/70">Choose the observed symptom</p>
+                         </div>
+                      </div>
+                      <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Observed Symptom</label>
+                      <select 
+                        value={diagnosticSymptom} 
+                        onChange={e => setDiagnosticSymptom(e.target.value)} 
+                        className="input-field w-full py-4 text-sm font-bold border-amber-500/30 shadow-inner"
+                      >
+                        <option value="">Select Symptom...</option>
+                        {DIAGNOSTIC_TREE[diagnosticCategory].map(sym => <option key={sym} value={sym}>{sym}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Guidance Note */}
+              <div className="mt-4 p-4 border border-dashed border-themed-muted/20 rounded-2xl flex gap-3 items-center">
+                 <div className="text-themed-muted animate-pulse"><Sprout size={20} /></div>
+                 <p className="text-[10px] text-themed-muted leading-relaxed">Selecting a specific symptom will auto-generate remediation tasks and trigger withhold-period locks on the production floor.</p>
+              </div>
             </div>
 
             <button onClick={() => {
-              setTargetChecks(prev => [...prev, { ...selectedTarget, answers: { ...targetAnswers } }]);
-              setSelectedTarget(null); setTargetAnswers({});
-            }} className="btn-primary w-full !py-4 !rounded-2xl mt-5 text-base">
-              Save Check ✓
+              setTargetChecks(prev => [...prev, { ...selectedTarget, diagnosticCategory, diagnosticSymptom }]);
+              setSelectedTarget(null); setDiagnosticCategory(''); setDiagnosticSymptom('');
+            }} className="btn-primary w-full !py-4 !rounded-2xl mt-5 text-base shadow-lg shadow-emerald-500/20">
+              Save Diagnosis ✓
             </button>
+
           </div>
         </div>
       )}

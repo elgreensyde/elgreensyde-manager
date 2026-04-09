@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar, MapPin, Sprout as SproutIcon, Scissors, LayoutDashboard, X, Edit3, Trash2, PackageCheck, Layers, ArrowRight } from 'lucide-react';
+import { Plus, Search, Calendar, MapPin, Sprout as SproutIcon, Scissors, LayoutDashboard, X, Edit3, Trash2, PackageCheck, Layers, ArrowRight, Clock } from 'lucide-react';
+
 import toast from 'react-hot-toast';
 import db from '../services/db';
 import lifecycleScheduler from '../services/lifecycleScheduler';
@@ -21,8 +22,11 @@ function Batches() {
   const [crops, setCrops] = useState([]);
   const [trays, setTrays] = useState([]);
   const [harvestLogs, setHarvestLogs] = useState([]);
+  const [activeIssues, setActiveIssues] = useState([]);
+  const [maintenanceRecords, setMaintenanceRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+
   const [activeTab, setActiveTab] = useState('trays');
   
   // Modals
@@ -34,6 +38,7 @@ function Batches() {
   const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [safetyAssessment, setSafetyAssessment] = useState(null);
   const [isCheckingSafety, setIsCheckingSafety] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [activePlotForHarvest, setActivePlotForHarvest] = useState(null);
   const [activeTrayForTransplant, setActiveTrayForTransplant] = useState(null);
@@ -57,20 +62,25 @@ function Batches() {
   const [transplantForm, setTransplantForm] = useState(defaultTransplantForm);
 
   const load = async () => {
-    const [b, p, c, t, h] = await Promise.all([
+    const [b, p, c, t, h, issues, mLogs] = await Promise.all([
       db.getAll('batches') || [],
       db.getAll('plots') || [],
       db.getAll('crops') || [],
       db.getAll('trays') || [],
-      db.getAll('harvest_logs') || []
+      db.getAll('harvest_logs') || [],
+      supabase.from('flagged_issues').select('*').eq('is_active_threat', true),
+      db.getAll('maintenance_logs') || []
     ]);
     setBatches(b || []);
     setPlots(p || []);
     setCrops(c || []);
     setTrays(t || []);
     setHarvestLogs(h || []);
+    setActiveIssues(issues.data || []);
+    setMaintenanceRecords(mLogs || []);
     setLoading(false);
   };
+
   
   useEffect(() => { load(); }, []);
 
@@ -84,11 +94,24 @@ function Batches() {
         cropPart = crop.common_name.substring(0,3).toUpperCase();
       }
     }
-    const suffix = Date.now().toString().slice(-6); 
+    const suffix = `${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90) + 10}`;
     setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: `${prefix.toUpperCase()}-${cropPart}-${suffix}` });
   };
 
   const generateRandomBedCode = () => `BED-${Math.floor(Math.random() * 9000) + 1000}`;
+
+  const parseDateInternal = (dateStr) => {
+    if (!dateStr) return new Date();
+    let d = new Date(dateStr);
+    if (isNaN(d.getTime())) {
+      // Try parsing common localized formats like DD/MM/YYYY
+      const parts = dateStr.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+      if (parts) {
+        d = new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
+      }
+    }
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
 
   const calculateTargetDate = (cropId, startDateStr) => {
     if (!cropId || !startDateStr) return '';
@@ -99,9 +122,7 @@ function Batches() {
     const daysOffset = (crop.common_name === 'Sweet Basil (Ocimum basilicum)') ? 14 : (crop.rooting_or_germ_days || 0);
 
     // Robust parsing for mobile browsers
-    const date = new Date(startDateStr);
-    if (isNaN(date.getTime())) return '';
-    
+    const date = parseDateInternal(startDateStr);
     date.setDate(date.getDate() + daysOffset);
     return date.toISOString().split('T')[0];
   };
@@ -163,9 +184,13 @@ function Batches() {
       setEditingTrayId(null);
       load();
     } catch (err) {
-      alert(err.message);
-      if(err.message.includes("tray_code_key")) toast.error("Tray Code already exists!");
-      else toast.error("Error saving tray.");
+      console.error('Tray Creation Error:', err);
+      if(err.message.includes("tray_code_key")) {
+        toast.error("Tray Code already exists! Regenerating...");
+        generateCode('tray', trayForm.crop_id, setTrayForm, trayForm);
+      } else {
+        toast.error(`Error: ${err.message || 'Operation failed'}`);
+      }
     }
   };
 
@@ -394,8 +419,10 @@ function Batches() {
 
   const handleLogHarvest = async (e) => {
     e.preventDefault();
-    if (!activePlotForHarvest) return;
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
+      if (!activePlotForHarvest) return;
       const yieldWeight = parseFloat(harvestForm.yield_weight_g) || 0;
       console.log('Logging harvest for:', activePlotForHarvest.plot_code, 'Yield:', yieldWeight);
       
@@ -449,6 +476,8 @@ function Batches() {
     } catch(err) {
       console.error('Harvest Error Details:', err);
       toast.error(`Database Error: ${err.message || 'Operation failed'}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -594,68 +623,118 @@ function Batches() {
 
                const plotHarvests = harvestLogs.filter(h => h.plot_id === (plot.plot_id || plot.id));
                const totalYield = plotHarvests.reduce((sum, h) => sum + parseFloat(h.yield_weight_g || 0), 0);
+                
+               // V3.2: Active Threat Check
+               const plotIssues = activeIssues.filter(i => i.target_id === (plot.plot_id || plot.id) && i.target_type === 'plot');
+               const hasCriticalThreat = plotIssues.some(i => i.severity === 'High' || i.severity === 'Critical');
+
+               // V3.2: Quarantine / Withholding Lock Check
+               const recentLogs = maintenanceRecords.filter(l => 
+                 l.target_ids && l.target_ids.includes(plot.plot_id || plot.id) && 
+                 l.withholding_period_days > 0
+               );
+                
+               let quarantineDate = null;
+               recentLogs.forEach(l => {
+                 const applyDate = new Date(l.event_date);
+                 applyDate.setDate(applyDate.getDate() + (l.withholding_period_days || 0));
+                 if (!quarantineDate || applyDate > quarantineDate) quarantineDate = applyDate;
+               });
+                
+               const isQuarantined = quarantineDate && quarantineDate > new Date();
 
                return (
-                <div key={plot.plot_id || plot.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-xs font-mono text-themed-muted">{plot.plot_code}</span>
-                      <h3 className="font-semibold text-themed-heading">{plot.crop_id ? (crop ? crop.common_name : 'Unknown Crop') : 'Empty Bed'}</h3>
-                      {plot.sowing_date && <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><Calendar size={12}/> Planted: {plot.sowing_date}</p>}
-                      {plot.sowing_date && crop?.days_to_maturity && plot.status === 'Active' && (
-                        <div className="mt-3">
-                          <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
-                            <span>Day {Math.floor((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24))} of {crop.days_to_maturity}</span>
-                            <span>{Math.min(100, Math.floor(((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100))}%</span>
-                          </div>
-                          <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-indigo-500 transition-all duration-1000" 
-                              style={{ width: `${Math.min(100, ((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100)}%` }} 
-                            />
-                          </div>
+                  <div key={plot.plot_id || plot.id} 
+                    className={`glass-card p-4 group select-none active:bg-black/5 transition-all ${hasCriticalThreat ? 'border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : ''}`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-xs font-mono text-themed-muted">{plot.plot_code}</span>
+                        <div className="flex items-center gap-2">
+                           <h3 className="font-semibold text-themed-heading">{plot.crop_id ? (crop ? crop.common_name : 'Unknown Crop') : 'Empty Bed'}</h3>
+                           {hasCriticalThreat && <span className="p-1 px-2 bg-red-500 text-white text-[10px] font-bold rounded-lg animate-pulse">⚠️ ACTIVE THREAT</span>}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                       <span className={`badge text-[10px] ${badgeColor}`}>{plot.status}</span>
-                       <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button 
-                           onClick={(e) => { 
-                             e.preventDefault();
-                             e.stopPropagation(); 
-                             openEditPlot(plot); 
-                           }} 
-                           className="p-3 -m-3 text-gray-400 hover:text-white transition-colors"
-                         >
-                           <Edit3 size={20}/>
-                         </button>
-                         <button 
-                           onClick={(e) => { 
-                             e.preventDefault();
-                             e.stopPropagation(); 
-                             deletePlot(plot.plot_id || plot.id); 
-                           }} 
-                           className="p-3 -m-3 text-red-400 hover:text-red-500 transition-colors"
-                         >
-                           <Trash2 size={20}/>
-                         </button>
-                       </div>
-                    </div>
-                  </div>
-                  {plot.status === 'Active' && (
-                    <div className="mt-4 flex flex-col gap-2 border-t border-white/5 pt-3">
-                      <div className="flex justify-between items-center text-xs text-themed-muted">
-                        <span>{plotHarvests.length} Harvests</span>
-                        <span className="font-bold text-green-400">{totalYield.toFixed(1)}g Total</span>
+                        {plot.sowing_date && <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><Calendar size={12}/> Planted: {plot.sowing_date}</p>}
+                        
+                        {/* Threat Details */}
+                        {plotIssues.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {plotIssues.map((issue, idx) => (
+                              <div key={idx} className="text-[10px] font-bold text-red-500 bg-red-500/10 px-2 py-1 rounded-md border border-red-500/20">
+                                {issue.specific_symptom || issue.description.substring(0, 30)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {plot.sowing_date && crop?.days_to_maturity && plot.status === 'Active' && (
+                          <div className="mt-3">
+                            <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                              <span>Day {Math.floor((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24))} of {crop.days_to_maturity}</span>
+                              <span>{Math.min(100, Math.floor(((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100))}%</span>
+                            </div>
+                            <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-indigo-500 transition-all duration-1000" 
+                                style={{ width: `${Math.min(100, ((new Date() - new Date(plot.sowing_date)) / (1000 * 60 * 60 * 24)) / crop.days_to_maturity * 100)}%` }} 
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <button className="btn-primary !text-xs !py-1.5 !px-2 w-full justify-center" onClick={() => handleStartHarvest(plot)} disabled={isCheckingSafety}>
-                         {isCheckingSafety ? <div className="loading-spinner h-3 w-3 border-2" /> : <><Scissors size={12}/> Log Harvest</>}
-                      </button>
+                      <div className="flex flex-col items-end gap-2">
+                         <span className={`badge text-[10px] ${badgeColor}`}>{plot.status}</span>
+                         <div className="flex gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button 
+                             onClick={(e) => { 
+                               e.preventDefault();
+                               e.stopPropagation(); 
+                               openEditPlot(plot); 
+                             }} 
+                             className="p-3 -m-3 text-gray-400 hover:text-white transition-colors"
+                           >
+                             <Edit3 size={20}/>
+                           </button>
+                           <button 
+                             onClick={(e) => { 
+                               e.preventDefault();
+                               e.stopPropagation(); 
+                               deletePlot(plot.plot_id || plot.id); 
+                             }} 
+                             className="p-3 -m-3 text-red-400 hover:text-red-500 transition-colors"
+                           >
+                             <Trash2 size={20}/>
+                           </button>
+                         </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-               );
+                    {plot.status === 'Active' && (
+                      <div className="mt-4 flex flex-col gap-2 border-t border-white/5 pt-3">
+                        <div className="flex justify-between items-center text-xs text-themed-muted">
+                          <span>{plotHarvests.length} Harvests</span>
+                          <span className="font-bold text-green-400">{totalYield.toFixed(1)}g Total</span>
+                        </div>
+                        
+                        {isQuarantined && (
+                          <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-500 text-xs font-bold">
+                            <Clock size={14} /> Quarantined until {quarantineDate.toLocaleDateString()}
+                          </div>
+                        )}
+
+                        <button 
+                          className={`btn-primary !text-sm !py-3 !px-2 w-full justify-center ${(hasCriticalThreat || isQuarantined) ? 'opacity-30 cursor-not-allowed grayscale' : ''}`} 
+                          onClick={() => !(hasCriticalThreat || isQuarantined) && handleStartHarvest(plot)} 
+                          disabled={isCheckingSafety || hasCriticalThreat || isQuarantined}
+                        >
+                           {isCheckingSafety ? <div className="loading-spinner h-3 w-3 border-2" /> : (
+                             hasCriticalThreat ? '🚫 HARVEST BLOCKED (THREAT)' : 
+                             isQuarantined ? '⏱ WITHHOLDING LOCK' :
+                             <><Scissors size={14} className="mr-2"/> Log Harvest</>
+                           )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
             })}
           </div>
 
@@ -1080,7 +1159,9 @@ function Batches() {
                 <p className="text-[10px] text-themed-muted">Culled weight will immediately funnel into your Finance Lost Potential tracker.</p>
               </div>
               
-              <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center">Save Harvest Record</button>
+              <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-3 mt-2 justify-center disabled:opacity-60 disabled:cursor-not-allowed">
+                {isSubmitting ? 'Saving...' : 'Save Harvest Record'}
+              </button>
             </form>
           </div>
         </div>

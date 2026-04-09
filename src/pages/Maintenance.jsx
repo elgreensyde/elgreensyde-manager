@@ -7,8 +7,10 @@ function Maintenance() {
   const [logs, setLogs] = useState([]);
   const [plots, setPlots] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [consumables, setConsumables] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+
   
   // Modal
   const [showModal, setShowModal] = useState(false);
@@ -21,22 +23,27 @@ function Maintenance() {
     target_ids: [],
     method_product: '',
     dosage_rate: '',
+    input_id: '', // Connected to inputs_inventory
+    amount_used: '',
     notes: ''
   };
   const [form, setForm] = useState(defaultForm);
 
   const load = async () => {
-    const [m, p, b] = await Promise.all([
+    const [m, p, b, c] = await Promise.all([
       db.getAll('maintenance_logs') || [],
       db.getAll('plots') || [],
-      db.getAll('batches') || []
+      db.getAll('batches') || [],
+      db.getAll('inputs_inventory') || []
     ]);
     
     setLogs(m || []);
     setPlots(p || []);
     setBatches(b || []);
+    setConsumables(c || []);
     setLoading(false);
   };
+
   
   useEffect(() => { load(); }, []);
 
@@ -76,6 +83,8 @@ function Maintenance() {
     }
 
     try {
+      const selectedInput = consumables.find(c => c.input_id === form.input_id);
+      
       const dbPayload = {
         event_date: form.event_date,
         action_category: form.action_category,
@@ -83,14 +92,29 @@ function Maintenance() {
         dosage_rate: form.dosage_rate,
         notes: form.notes,
         target_ids: form.target_ids,
+        input_id: form.input_id || null, // V3.2: Linked to inputs_inventory
+        volume_applied: parseFloat(form.amount_used) || 0, // Maps to schema
+        withholding_period_days: selectedInput ? selectedInput.withholding_days : 0,
         plot_id: null, // Legacy fields silenced
         batch_id: null
       };
 
       await db.insert('maintenance_logs', dbPayload);
 
+      // V3.2: Automated Inventory Deduction via RPC
+      if (form.input_id && form.amount_used > 0) {
+        const { error: rpcError } = await supabase.rpc('decrement_inventory', {
+          target_sku: form.input_id,
+          amount_to_deduct: parseFloat(form.amount_used)
+        });
+        if (rpcError) console.error("Inventory deduction failed:", rpcError);
+        else toast.success(`Deducted ${form.amount_used} from ${selectedInput?.product_name}`);
+      }
+
+
       // Auto-generate follow-up tasks
       if (form.action_category === 'Fertilize' || form.action_category === 'Pest Treatment') {
+
         const followUpDays = form.action_category === 'Fertilize' ? 7 : 3;
         const futureDate = new Date(form.event_date);
         futureDate.setDate(futureDate.getDate() + followUpDays);
@@ -221,8 +245,27 @@ function Maintenance() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-themed-muted block mb-1">Select Consumable *</label>
+                  <select required value={form.input_id} 
+                    onChange={e => {
+                      const input = consumables.find(c => c.input_id === e.target.value);
+                      setForm({...form, input_id: e.target.value, method_product: input ? input.product_name : '' });
+                    }} 
+                    className="input-field w-full">
+                    <option value="">Select Item...</option>
+                    {consumables.map(c => <option key={c.input_id} value={c.input_id}>{c.product_name} ({c.current_stock} {c.stock_unit})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-themed-muted block mb-1">Amount Used (ml/g) *</label>
+                  <input type="number" required step="0.1" value={form.amount_used} onChange={e => setForm({...form, amount_used: e.target.value})} className="input-field w-full" placeholder="e.g. 50" />
+                </div>
+              </div>
+
               <div>
-                <label className="text-xs text-themed-muted block mb-1">Product / Recipe Name *</label>
+                <label className="text-xs text-themed-muted block mb-1">Product Details (Recipe)</label>
                 <input type="text" required value={form.method_product} onChange={e => setForm({...form, method_product: e.target.value})} className="input-field w-full" placeholder="e.g. Masterblend Tomato Formula" />
               </div>
               
@@ -230,6 +273,7 @@ function Maintenance() {
                 <label className="text-xs text-themed-muted block mb-1">Dosage / Rate Applied</label>
                 <input type="text" value={form.dosage_rate} onChange={e => setForm({...form, dosage_rate: e.target.value})} className="input-field w-full" placeholder="e.g. 2.4 ECU or 5ml/L" />
               </div>
+
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-black/5 border border-white/5 rounded-xl mt-2">
                 <div>

@@ -21,7 +21,12 @@ const lifecycleScheduler = {
    * @param {Object} forecast - Optional weather forecast data
    */
   async findNextAvailableSlot(dateStr, category = 'Maintenance', forecast = null) {
+    if (!dateStr) return null;
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      console.error('lifecycleScheduler: Invalid date passed to findNextAvailableSlot', dateStr);
+      return dateStr; // Fallback to raw string if it fails
+    }
     const dayOfWeek = date.getDay(); // 0 = Sunday
 
     // Rule 1: Sunday Block
@@ -91,7 +96,12 @@ const lifecycleScheduler = {
     }
 
     const tasksToCreate = [];
+    if (!startDate) return;
     let currentBaseDate = new Date(startDate);
+    if (isNaN(currentBaseDate.getTime())) {
+       console.error('lifecycleScheduler: Invalid startDate for task chain', startDate);
+       currentBaseDate = new Date(); // Fallback to today
+    }
 
     // 1. Generation: Standard Lifecycle Stages
     const stages = crop.stages || [];
