@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, Beaker, ChevronRight, Sun, Moon, ScanEye, ClipboardList, Target, Zap } from 'lucide-react';
+import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, Beaker, ChevronRight, Sun, Moon, ScanEye, ClipboardList, Target, Zap, CloudSun } from 'lucide-react';
 import { useTheme } from './contexts/ThemeContext';
 import { initializeSeedData } from './services/seedData';
 import Dashboard from './pages/Dashboard';
@@ -16,6 +16,7 @@ import ReturnSummary from './pages/ReturnSummary';
 import OrderBuilder from './pages/OrderBuilder';
 import FulfillmentBoard from './pages/FulfillmentBoard';
 import PlantingTargets from './pages/PlantingTargets';
+import Weather from './pages/Weather';
 import { Toaster } from 'react-hot-toast';
 import awayService from './services/awayService';
 import notificationService from './services/notificationService';
@@ -108,6 +109,7 @@ function App() {
 
   const moreNav = [
     { to: '/monitoring', icon: ScanEye, label: 'Farm Walk' },
+    { to: '/weather', icon: CloudSun, label: 'Weather' },
     { to: '/orders', icon: ClipboardList, label: 'Orders' },
     { to: '/targets', icon: Target, label: 'Planting Targets' },
     { to: '/crops', icon: BookOpen, label: 'Crop Library' },
@@ -177,6 +179,7 @@ function App() {
           <Route path="/maintenance" element={<Maintenance />} />
           <Route path="/monitoring" element={<Monitoring />} />
           <Route path="/orders" element={<FulfillmentBoard />} />
+          <Route path="/weather" element={<Weather />} />
           <Route path="/orders/new" element={<OrderBuilder />} />
           <Route path="/targets" element={<PlantingTargets />} />
         </Routes>

@@ -30,7 +30,7 @@ const WEATHER_ICONS = {
 };
 
 const weatherService = {
-  async getForecast() {
+  async getForecast(forceRefresh = false) {
     try {
       // 1. Check DB Cache first for cross-device consistency
       const { data: cache, error } = await supabase
@@ -40,9 +40,10 @@ const weatherService = {
         .eq('lon', LON)
         .maybeSingle();
 
-      if (cache && new Date(cache.expires_at) > new Date()) {
+      if (!forceRefresh && cache && new Date(cache.expires_at) > new Date()) {
         console.log('Using cached weather data (Valencia City)');
-        return cache.data;
+        // Normalize: if it's the new cache it has .daily, if old it's just the daily object
+        return cache.data.daily ? cache.data.daily : cache.data;
       }
 
       // 2. Refresh from Open-Meteo if expired or missing
@@ -76,11 +77,11 @@ const weatherService = {
 
   async getHourlyForecast() {
     try {
-      const { data: cache } = await supabase.from('weather_cache').select('data').eq('lat', LAT).eq('lon', LON).maybeSingle();
-      if (cache && cache.data && cache.data.hourly) return cache.data.hourly;
+      const { data: cache } = await supabase.from('weather_cache').select('data, expires_at').eq('lat', LAT).eq('lon', LON).maybeSingle();
+      if (cache && cache.data && cache.data.hourly && new Date(cache.expires_at) > new Date()) return cache.data.hourly;
       
-      // trigger fetch
-      await this.getForecast();
+      // trigger fetch explicitly forcing refresh if hourly is not present
+      await this.getForecast(true);
       const { data: cache2 } = await supabase.from('weather_cache').select('data').eq('lat', LAT).eq('lon', LON).maybeSingle();
       return cache2?.data?.hourly || null;
     } catch(err) {
