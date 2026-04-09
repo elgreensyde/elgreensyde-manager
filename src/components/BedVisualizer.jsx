@@ -1,28 +1,30 @@
 import React, { useState } from 'react';
-import { LayoutGrid, Sprout, ShieldAlert, Target } from 'lucide-react';
+import { LayoutGrid, Sprout, ShieldAlert } from 'lucide-react';
 
 function BedVisualizer() {
-  const [lengthParam, setLengthParam] = useState(5); // 2m to 15m
+  const [targetBasil, setTargetBasil] = useState(32);
   const [showNasturtiums, setShowNasturtiums] = useState(true);
   const [showMarigolds, setShowMarigolds] = useState(true);
   const [showChives, setShowChives] = useState(true);
 
-  // Constants
-  const bedWidth = 0.9;
-  const basilSpacing = 0.15; // 15cm
+  // Blueprint Constants
+  const bedWidth = 0.9; // 36 inches / 90cm
+  const basilSpacing = 0.15; // 6 inches / 15cm
   const basilRows = 3;
 
-  // Math
-  const plantsPerRow = Math.floor(lengthParam / basilSpacing);
-  const totalBasil = plantsPerRow * basilRows;
+  // Math based on target
+  const plantsPerRow = Math.ceil(targetBasil / basilRows);
+  const requiredLength = (plantsPerRow * basilSpacing).toFixed(2);
   
-  const chivesPerRow = Math.floor(lengthParam / 0.3); // Every 30cm
-  const totalChives = showChives ? chivesPerRow * 2 : 0; // 2 centerlines
+  const chivesSpacing = 0.3; // 30cm
+  const chivesPerRow = Math.max(1, Math.floor(requiredLength / chivesSpacing));
+  const totalChives = showChives ? chivesPerRow * 2 : 0; // 2 center inter-rows
   
-  const nasturtiumPerRow = Math.floor(lengthParam / 0.5); // Every 50cm
+  const nasturtiumSpacing = 0.5; // 50cm
+  const nasturtiumPerRow = Math.max(1, Math.floor(requiredLength / nasturtiumSpacing));
   const totalNasturtiums = showNasturtiums ? nasturtiumPerRow * 2 : 0; // 2 outer edges
   
-  const totalMarigolds = showMarigolds ? 6 : 0; // 3 on each short end (one per basil row)
+  const totalMarigolds = showMarigolds ? 6 : 0; // 3 on each end
 
   return (
     <div className="glass-card border border-gray-200 dark:border-gray-800 p-5 rounded-2xl w-full">
@@ -36,14 +38,14 @@ function BedVisualizer() {
         <div className="p-4 bg-black/5 dark:bg-white/5 rounded-xl space-y-4 border border-gray-200 dark:border-gray-700">
           <div>
             <div className="flex justify-between text-xs font-bold text-themed-primary mb-2">
-              <span>Bed Length: <span className="text-emerald-500 text-sm">{lengthParam} m</span></span>
-              <span>Width: Locked at {bedWidth}m</span>
+              <span>Target Basil Count: <span className="text-emerald-500 text-sm">{targetBasil}</span></span>
+              <span>Req. Bed Length: <span className="text-emerald-500">{requiredLength}m</span></span>
             </div>
             <input 
               type="range" 
-              min="2" max="15" step="1" 
-              value={lengthParam} 
-              onChange={(e) => setLengthParam(Number(e.target.value))}
+              min="10" max="150" step="1" 
+              value={targetBasil} 
+              onChange={(e) => setTargetBasil(Number(e.target.value))}
               className="w-full accent-emerald-500"
             />
           </div>
@@ -74,7 +76,7 @@ function BedVisualizer() {
         <div className="grid grid-cols-4 gap-2 text-center">
            <div className="bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20">
               <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase">Basil</span>
-              <span className="block text-xl font-display font-bold text-emerald-500">{totalBasil}</span>
+              <span className="block text-xl font-display font-bold text-emerald-500">{targetBasil}</span>
            </div>
            {showNasturtiums && (
              <div className="bg-amber-500/10 p-2 rounded-xl border border-amber-500/20 animate-fade-in">
@@ -96,67 +98,73 @@ function BedVisualizer() {
            )}
         </div>
 
-        {/* Visual Map rendering a simplified scaled representation */}
-        {/* We use a flex container to represent the bed. */}
-        <div className="relative w-full h-[120px] bg-[#3e2723] rounded-sm shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] overflow-hidden border border-amber-900/50 my-6">
-           {/* Grid markings */}
-           <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
-           
-           {/* Centerline Chives (2 rows) */}
-           {showChives && (
-              <>
-                 <div className="absolute w-full h-1 bg-purple-500/30 top-[33%]" />
-                 <div className="absolute w-full h-1 bg-purple-500/30 top-[66%]" />
-                 <div className="absolute inset-0 flex flex-col justify-center gap-6 py-4 px-8 opacity-70">
-                    <div className="flex justify-between w-full">
-                       {[...Array(5)].map((_, i) => <div key={'c1'+i} className="w-1.5 h-1.5 bg-purple-400 rounded-full" />)}
-                    </div>
-                    <div className="flex justify-between w-full">
-                       {[...Array(5)].map((_, i) => <div key={'c2'+i} className="w-1.5 h-1.5 bg-purple-400 rounded-full" />)}
-                    </div>
+        {/* Visual Map Rendering */}
+        <div className="w-full h-[180px] bg-[#3e2723] rounded-xl shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] overflow-x-auto overflow-y-hidden border border-amber-900/50 my-6 shrink-0 custom-scrollbar">
+           <div className="relative h-full py-4 px-10 flex flex-col justify-between" style={{ minWidth: `${Math.max(100, plantsPerRow * 4)}%` }}>
+               {/* Grid markings */}
+               <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+               
+               {/* Nasturtiums Top Edge */}
+               {showNasturtiums && (
+                 <div className="absolute top-1 left-8 right-8 flex justify-between z-20">
+                    {[...Array(nasturtiumPerRow)].map((_, i) => <div key={'n1'+i} className="w-2.5 h-2.5 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.6)]" />)}
                  </div>
-              </>
-           )}
+               )}
 
-           {/* Sweet Basil (3 main rows) */}
-           <div className="absolute inset-0 flex flex-col justify-between py-2 px-12 z-10">
-              {[...Array(3)].map((_, rowIdx) => (
-                 <div key={'br'+rowIdx} className="flex justify-between w-full items-center">
-                    {[...Array(9)].map((_, i) => (
-                       <Sprout key={'b'+i} size={14} className="text-emerald-400 opacity-90 drop-shadow-md" />
-                    ))}
+               {/* Chives Line 1 */}
+               {showChives && (
+                 <div className="absolute top-[33%] left-8 right-8 flex justify-between z-10 translate-y-[-50%]">
+                    {[...Array(chivesPerRow)].map((_, i) => <div key={'c1'+i} className="w-1.5 h-1.5 bg-purple-400 rounded-full" />)}
                  </div>
-              ))}
+               )}
+
+               {/* Chives Line 2 */}
+               {showChives && (
+                 <div className="absolute top-[66%] left-8 right-8 flex justify-between z-10 translate-y-[50%]">
+                    {[...Array(chivesPerRow)].map((_, i) => <div key={'c2'+i} className="w-1.5 h-1.5 bg-purple-400 rounded-full" />)}
+                 </div>
+               )}
+
+               {/* Sweet Basil (Exactly mapped rows) */}
+               <div className="absolute inset-0 top-[15%] bottom-[15%] left-10 right-10 flex flex-col justify-between z-30">
+                  {[...Array(basilRows)].map((_, rowIdx) => {
+                     let thisRowPlants = Math.floor(targetBasil / basilRows);
+                     if (rowIdx < targetBasil % basilRows) thisRowPlants++;
+                     
+                     return (
+                     <div key={'br'+rowIdx} className="flex justify-between w-full items-center">
+                        {[...Array(thisRowPlants)].map((_, i) => (
+                           <Sprout key={'b'+i} size={18} className="text-emerald-400 shrink-0 drop-shadow-md" />
+                        ))}
+                     </div>
+                     );
+                  })}
+               </div>
+
+               {/* Nasturtiums Bottom Edge */}
+               {showNasturtiums && (
+                 <div className="absolute bottom-1 left-8 right-8 flex justify-between z-20">
+                    {[...Array(nasturtiumPerRow)].map((_, i) => <div key={'n2'+i} className="w-2.5 h-2.5 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.6)]" />)}
+                 </div>
+               )}
+
+               {/* Marigolds (Ends) */}
+               {showMarigolds && (
+                 <div className="absolute inset-0 flex justify-between items-center px-2 z-40 pointer-events-none">
+                    <div className="flex flex-col justify-between h-[60%]">
+                       {[...Array(3)].map((_, i) => <div key={'m1'+i} className="w-3.5 h-3.5 bg-orange-500 rounded-full outline outline-2 outline-orange-300" />)}
+                    </div>
+                    <div className="flex flex-col justify-between h-[60%]">
+                       {[...Array(3)].map((_, i) => <div key={'m2'+i} className="w-3.5 h-3.5 bg-orange-500 rounded-full outline outline-2 outline-orange-300" />)}
+                    </div>
+                 </div>
+               )}
            </div>
-
-           {/* Nasturtiums (Outer Perimeter) */}
-           {showNasturtiums && (
-             <div className="absolute inset-0 flex flex-col justify-between p-0.5 z-20">
-                <div className="flex justify-between w-full">
-                   {[...Array(7)].map((_, i) => <div key={'n1'+i} className="w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.6)]" />)}
-                </div>
-                <div className="flex justify-between w-full">
-                   {[...Array(7)].map((_, i) => <div key={'n2'+i} className="w-2 h-2 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.6)]" />)}
-                </div>
-             </div>
-           )}
-
-           {/* Marigolds (Ends) */}
-           {showMarigolds && (
-             <div className="absolute inset-0 flex justify-between items-center px-1 z-30">
-                <div className="flex flex-col gap-6">
-                   {[...Array(3)].map((_, i) => <div key={'m1'+i} className="w-2.5 h-2.5 bg-orange-500 rounded-full outline outline-2 outline-orange-300" />)}
-                </div>
-                <div className="flex flex-col gap-6">
-                   {[...Array(3)].map((_, i) => <div key={'m2'+i} className="w-2.5 h-2.5 bg-orange-500 rounded-full outline outline-2 outline-orange-300" />)}
-                </div>
-             </div>
-           )}
         </div>
 
-        <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-600 dark:text-emerald-400">
-           <ShieldAlert size={14} className="shrink-0" />
-           <p>This layout creates a <strong>Push-Pull IPM Defense</strong> while maintaining strict 15cm basil spacing for airflow to combat Downy Mildew.</p>
+        <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-600 dark:text-emerald-400">
+           <ShieldAlert size={16} className="shrink-0" />
+           <p>This layout uses the <strong>Bukidnon Push-Pull IPM Defense</strong>. It maintains exactly 6-inch (15cm) basil spacing in 3 rows for airflow to combat Downy Mildew, scaling dynamically to your required yield.</p>
         </div>
       </div>
     </div>
