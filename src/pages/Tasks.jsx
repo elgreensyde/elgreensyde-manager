@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, CheckCircle2, Clock, AlertTriangle, X, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import db from '../services/db';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
 import { confirmAction } from '../services/dialogService';
@@ -116,6 +117,13 @@ function Tasks() {
       const input = inputs.find(i => i.input_id === logForm.input_id);
       if (!input) return;
 
+      const resolveActionCategory = (inputType = '') => {
+        const normalized = inputType.toLowerCase();
+        if (normalized.includes('fertilizer') || normalized.includes('amendment')) return 'Fertilize';
+        if (normalized.includes('pesticide') || normalized.includes('fungicide')) return 'Pest Treatment';
+        return 'Scouting';
+      };
+
       const deduction = parseFloat(logForm.amount);
       if (input.current_stock < deduction) {
         toast.error(`Insufficient stock! ${input.product_name} only has ${input.current_stock}${input.stock_unit} available.`);
@@ -125,10 +133,14 @@ function Tasks() {
       // 1. Deduct Inventory
       await db.update('inputs_inventory', input.input_id, { current_stock: input.current_stock - deduction });
 
+      // Map input.type to valid action_category
+      let category = 'Fertilize';
+      if (input.type === 'Organic Pesticide' || input.type === 'Fungicide') category = 'Pest Treatment';
+
       // 2. Create Maintenance Log
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
-        action_category: input.type,
+        action_category: category,
         target_ids: activeTaskForLog.plot_id ? [activeTaskForLog.plot_id] : activeTaskForLog.batch_id ? [activeTaskForLog.batch_id] : [],
         method_product: input.product_name,
         dosage_rate: `${logForm.amount} ${logForm.unit || input.stock_unit}`,
