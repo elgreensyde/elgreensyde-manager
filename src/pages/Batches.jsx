@@ -11,7 +11,6 @@ import { checkHarvestSafety } from '../services/harvestSafety';
 import { confirmAction, promptAction } from '../services/dialogService';
 
 import BedVisualizer from '../components/BedVisualizer';
-import DosingCalculator from '../components/DosingCalculator';
 
 const TRAY_STATUSES = ['Sown', 'Germinated', 'Ready', 'Transplanted', 'Completed'];
 const BATCH_STATUSES = ['Nursery', 'Completed', 'Discarded'];
@@ -120,8 +119,8 @@ function Batches() {
     const crop = getCrop(cropId);
     if (!crop) return '';
     
-    // Sweet Basil Override (14 days germ/rooting)
-    const daysOffset = (crop.common_name === 'Sweet Basil (Ocimum basilicum)') ? 14 : (crop.rooting_or_germ_days || 0);
+    // Sweet Basil Override (14 days germ/rooting based on Blueprint)
+    const daysOffset = (crop.common_name === 'Sweet Basil') ? 14 : (crop.rooting_or_germ_days || 0);
 
     // Robust parsing for mobile browsers
     const date = parseDateInternal(startDateStr);
@@ -308,8 +307,9 @@ function Batches() {
   const deletePlot = async (id) => {
     if(await confirmAction('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)')) {
       try {
+        // Remove linked tasks first to satisfy FK constraints in non-cascade schemas.
+        await lifecycleScheduler.cleanupTasks(id, 'plot', { includeAllStatuses: true });
         await db.delete('plots', id);
-        await lifecycleScheduler.cleanupTasks(id, 'plot');
         toast.success('Plot and tasks deleted.');
         load();
       } catch (err) {
@@ -603,9 +603,8 @@ function Batches() {
 
           {/* PLOT MONITOR (Pipeline A) */}
           <div className={`space-y-4 ${activeTab === 'plots' ? 'block animate-fade-in' : 'hidden'}`}>
-             <div className="flex flex-col md:flex-row gap-4 mb-4 mt-2">
+             <div className="mb-4 mt-2">
                  <BedVisualizer />
-                 <DosingCalculator />
              </div>
 
             <div className="flex flex-wrap items-center justify-between mb-4">

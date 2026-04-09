@@ -15,14 +15,23 @@ function Tasks() {
   const [filterStatus, setFilterStatus] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [inputs, setInputs] = useState([]);
+  const [activeTaskForLog, setActiveTaskForLog] = useState(null);
+  const [logForm, setLogForm] = useState({ input_id: '', amount: '', unit: '' });
   const [form, setForm] = useState({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' });
 
   const loadData = async () => {
     await db.markOverdueTasks();
-    const [t, b, c, p, h, i, s, tr] = await Promise.all([
-      db.getAll('tasks'), db.getAll('batches'), db.getAll('crops'), 
-      db.getAll('plots') || [], db.getAll('harvest_logs') || [], db.getAll('inventory') || [],
-      db.getAll('monitoring_sessions') || [], db.getAll('trays') || []
+    const [t, b, c, p, h, inv, s, tr, inputsInv] = await Promise.all([
+      db.getAll('tasks'), 
+      db.getAll('batches'), 
+      db.getAll('crops'), 
+      db.getAll('plots') || [], 
+      db.getAll('harvest_logs') || [], 
+      db.getAll('inventory') || [],
+      db.getAll('monitoring_sessions') || [], 
+      db.getAll('trays') || [],
+      db.getAll('inputs_inventory') || []
     ]);
     
     const todayStr = new Date().toISOString().split('T')[0];
@@ -43,7 +52,7 @@ function Tasks() {
     }
 
     // Auto-generate passive tasks
-    const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], i || [], c || [], tr || [], s || []);
+    const newTasks = runDailyTaskGeneration(t || [], p || [], b || [], h || [], inv || [], c || [], tr || [], s || []);
     const trulyNew = newTasks.filter(nt =>
       !(t || []).some(existing =>
         existing.title === nt.title &&
@@ -60,7 +69,11 @@ function Tasks() {
       setTasks(t || []);
     }
 
-    setBatches(b || []); setCrops(c || []); setPlots(p || []); setLoading(false);
+    setBatches(b || []); 
+    setCrops(c || []); 
+    setPlots(p || []); 
+    setInputs(inputsInv || []);
+    setLoading(false);
   };
   useEffect(() => { loadData(); }, []);
 
@@ -87,10 +100,55 @@ function Tasks() {
       }
 
       await db.update('tasks', taskId, { status: 'Completed', completed_at: new Date().toISOString() }); 
+      toast.success('Task completed!');
       loadData(); 
     } catch (err) {
       alert(err.message);
       console.error('Error completing task:', err);
+    }
+  };
+
+  const performLogExecution = async (e) => {
+    e.preventDefault();
+    if (!activeTaskForLog || !logForm.input_id || !logForm.amount) return;
+    
+    try {
+      const input = inputs.find(i => i.input_id === logForm.input_id);
+      if (!input) return;
+
+      const deduction = parseFloat(logForm.amount);
+      if (input.current_stock < deduction) {
+        toast.error(`Insufficient stock! ${input.product_name} only has ${input.current_stock}${input.stock_unit} available.`);
+        return;
+      }
+
+      // 1. Deduct Inventory
+      await db.update('inputs_inventory', input.input_id, { current_stock: input.current_stock - deduction });
+
+      // 2. Create Maintenance Log
+      await db.insert('maintenance_logs', {
+        event_date: new Date().toISOString().split('T')[0],
+        action_category: input.type,
+        target_ids: activeTaskForLog.plot_id ? [activeTaskForLog.plot_id] : activeTaskForLog.batch_id ? [activeTaskForLog.batch_id] : [],
+        method_product: input.product_name,
+        dosage_rate: `${logForm.amount} ${logForm.unit || input.stock_unit}`,
+        notes: `Executed via Task: ${activeTaskForLog.title}`,
+        withholding_period_days: input.withholding_days || 0
+      });
+
+      // 3. Mark Task as Completed
+      await db.update('tasks', activeTaskForLog.task_id || activeTaskForLog.id, { 
+        status: 'Completed', 
+        completed_at: new Date().toISOString() 
+      });
+
+      toast.success(`Deducted ${logForm.amount}${input.stock_unit} and logged maintenance!`);
+      setActiveTaskForLog(null);
+      setLogForm({ input_id: '', amount: '', unit: '' });
+      loadData();
+    } catch (err) {
+      toast.error('Failed to process execution.');
+      console.error(err);
     }
   };
 
@@ -168,21 +226,24 @@ function Tasks() {
                   {task.is_auto_generated && <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>⚙ auto</span>}
                 </div>
               </div>
-              {task.status !== 'Completed' && (
-                <div className="flex items-center gap-2">
-                  {task.title.toLowerCase().includes('scouting') && (
-                    <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
-                      Go <ArrowRight size={10} />
-                    </button>
+                  {task.status !== 'Completed' && (
+                    <div className="flex items-center gap-2">
+                      {task.title.toLowerCase().includes('scouting') && (
+                        <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                          Go <ArrowRight size={10} />
+                        </button>
+                      )}
+                      {(task.title.toLowerCase().includes('prep') || task.title.toLowerCase().includes('batch')) && (
+                        <button onClick={() => navigate('/batches')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-blue-500/10 text-blue-600 border-blue-500/20">
+                          Go <ArrowRight size={10} />
+                        </button>
+                      )}
+                      <button onClick={() => { setActiveTaskForLog(task); setLogForm({ input_id: '', amount: '', unit: '' }); }} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                        Log Execution <ArrowRight size={10} />
+                      </button>
+                      <StatusIcon size={16} className={`${config.color} flex-shrink-0`} />
+                    </div>
                   )}
-                  {(task.title.toLowerCase().includes('prep') || task.title.toLowerCase().includes('batch')) && (
-                    <button onClick={() => navigate('/batches')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-blue-500/10 text-blue-600 border-blue-500/20">
-                      Go <ArrowRight size={10} />
-                    </button>
-                  )}
-                  <StatusIcon size={16} className={`${config.color} flex-shrink-0`} />
-                </div>
-              )}
               <button onClick={(e) => { e.stopPropagation(); deleteTask(task.task_id || task.id); }} className="text-red-400/40 hover:text-red-500 p-3 -m-3 rounded-lg transition-colors flex-shrink-0 active:scale-90" title="Delete task"><X size={16} /></button>
             </div>
           );
@@ -206,6 +267,56 @@ function Tasks() {
               <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Link to Batch</label><select value={form.batch_id} onChange={e => setForm({...form, batch_id: e.target.value})} className="input-field"><option value="">No batch</option>{batches.filter(b => b.status === 'Nursery').map(b => { const crop = crops.find(c => c.id === b.crop_id); return <option key={b.id || b.batch_id} value={b.id || b.batch_id}>{b.batch_code} — {crop?.common_name||'Unknown'}</option>; })}</select></div>
               <div><label className="text-xs font-medium mb-1 block" style={{ color: 'var(--color-text-muted)' }}>Link to Plot</label><select value={form.plot_id} onChange={e => setForm({...form, plot_id: e.target.value})} className="input-field"><option value="">No plot</option>{plots.map(p => <option key={p.id || p.plot_id} value={p.id || p.plot_id}>{p.plot_code}</option>)}</select></div>
               <button type="submit" className="btn-primary w-full justify-center !py-3">Add Task</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOG EXECUTION MODAL */}
+      {activeTaskForLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setActiveTaskForLog(null)} />
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2">Execute with Inputs</h2>
+              <button onClick={() => setActiveTaskForLog(null)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
+            </div>
+            
+            <form onSubmit={performLogExecution} className="space-y-4">
+              <div className="p-3 bg-white/5 rounded-xl border border-white/5 mb-4">
+                <p className="text-xs text-themed-muted uppercase">Task</p>
+                <p className="font-semibold text-sm text-themed-heading">{activeTaskForLog.title}</p>
+              </div>
+
+              <div>
+                <label className="text-xs text-themed-muted block mb-1">Select Input (Fertilizer/Pesticide) *</label>
+                <select required value={logForm.input_id} onChange={e => setLogForm({...logForm, input_id: e.target.value})} className="input-field w-full">
+                  <option value="">Select Consumable...</option>
+                  {inputs.map(i => (
+                    <option key={i.input_id} value={i.input_id}>
+                      {i.product_name} ({i.current_stock} {i.stock_unit} available)
+                    </option>
+                  ))}
+                </select>
+                {inputs.length === 0 && <p className="text-[10px] text-amber-500 mt-1">No consumables found in inventory.</p>}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-themed-muted block mb-1">Amount Used *</label>
+                  <input type="number" required step="0.01" value={logForm.amount} onChange={e => setLogForm({...logForm, amount: e.target.value})} className="input-field w-full" placeholder="e.g. 50" />
+                </div>
+                <div>
+                  <label className="text-xs text-themed-muted block mb-1">Unit</label>
+                  <input type="text" readOnly value={inputs.find(i => i.input_id === logForm.input_id)?.stock_unit || '--'} className="input-field w-full bg-black/10 opacity-60" />
+                </div>
+              </div>
+
+              <div className="text-[10px] text-themed-muted mt-4">
+                This will deduct from <span className="text-amber-500">Inputs Inventory</span> and create a <span className="text-blue-500">Maintenance Log</span> entry linked to this target.
+              </div>
+              
+              <button type="submit" className="btn-primary w-full py-3 mt-4 justify-center bg-emerald-600 hover:bg-emerald-500">Confirm & Complete Task</button>
             </form>
           </div>
         </div>

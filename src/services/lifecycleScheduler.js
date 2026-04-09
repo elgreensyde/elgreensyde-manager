@@ -211,19 +211,26 @@ const lifecycleScheduler = {
    * @param {string} targetId 
    * @param {string} targetType - 'tray', 'batch', or 'plot'
    */
-  async cleanupTasks(targetId, targetType) {
+  async cleanupTasks(targetId, targetType, options = {}) {
     if (!targetId) return;
+    const { includeAllStatuses = false } = options;
     
     // Support all primary cultivation keys
     const column = targetType === 'tray' ? 'tray_id' : 
                    targetType === 'batch' ? 'batch_id' : 
                    'plot_id';
 
-    const { error } = await supabase
+    let query = supabase
       .from('tasks')
       .delete()
-      .eq(column, targetId)
-      .eq('status', 'Pending');
+      .eq(column, targetId);
+
+    // Default behavior stays conservative for archive flows.
+    if (!includeAllStatuses) {
+      query = query.eq('status', 'Pending');
+    }
+
+    const { error } = await query;
 
     if (error) {
        console.error(`[Lifecycle] Failed to cleanup tasks for ${targetType} ${targetId}:`, error);

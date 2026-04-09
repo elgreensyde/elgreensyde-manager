@@ -213,11 +213,11 @@ function Monitoring() {
       for (const tc of targetChecks) {
         // V3.2: Check if an active threat was diagnosed
         const isTargetFlagged = tc.diagnosticCategory && tc.diagnosticCategory !== 'None';
-        
+
         if (isTargetFlagged) {
           // Rule-based severity induction
           const severity = (tc.diagnosticCategory === 'Soil/Root Health' || tc.diagnosticSymptom === 'Grey Fuzz (Downy Mildew)') ? 'High' : 'Medium';
-          
+
           const issueRow = {
             session_id: session.session_id,
             target_type: tc.type,
@@ -260,13 +260,13 @@ function Monitoring() {
 
   const createTasksFromFlags = async () => {
     if (!sessionSummary?.createdIssues?.length) return;
-    
+
     const existingTasks = await db.getAll('tasks');
     let createdCount = 0;
 
     for (const issue of sessionSummary.createdIssues) {
       let titleStr = `Resolve: ${issue.description.substring(0, 80)}`;
-      
+
       // DIAGNOSTIC MAPPING FOR AUTO-TASKS
       if (issue.specific_symptom === 'Grey Fuzz (Downy Mildew)') {
         titleStr = `CRITICAL: Increase spacing and stop overhead irrigation for ${issue.description.split(': ')[1].split(' | ')[0]} (Downy Mildew)`;
@@ -283,9 +283,9 @@ function Monitoring() {
       }
 
       const normalizedTitle = titleStr.toLowerCase().trim();
-      
-      const exists = existingTasks.some(t => 
-        (t.status === 'Pending' || t.status === 'Overdue') && 
+
+      const exists = existingTasks.some(t =>
+        (t.status === 'Pending' || t.status === 'Overdue') &&
         t.title.toLowerCase().trim().includes(normalizedTitle)
       );
 
@@ -301,7 +301,7 @@ function Monitoring() {
         createdCount++;
       }
     }
-    
+
     if (createdCount > 0) {
       toast.success(`${createdCount} tasks created!`);
     } else {
@@ -681,8 +681,8 @@ function Monitoring() {
                       </div>
                       {checked
                         ? <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: hasFlagged ? '#ef444420' : '#10b98120', color: hasFlagged ? '#ef4444' : '#10b981' }}>
-                            {hasFlagged ? 'Flagged' : 'Done ✓'}
-                          </span>
+                          {hasFlagged ? 'Flagged' : 'Done ✓'}
+                        </span>
                         : <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />
                       }
                     </button>
@@ -713,8 +713,8 @@ function Monitoring() {
                       </div>
                       {checked
                         ? <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: hasFlagged ? '#ef444420' : '#10b98120', color: hasFlagged ? '#ef4444' : '#10b981' }}>
-                            {hasFlagged ? 'Flagged' : 'Done ✓'}
-                          </span>
+                          {hasFlagged ? 'Flagged' : 'Done ✓'}
+                        </span>
                         : <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />
                       }
                     </button>
@@ -770,39 +770,39 @@ function Monitoring() {
             <div className="space-y-4">
               <div className="glass-card-static p-6 rounded-3xl border-2 border-emerald-500/20 shadow-sm bg-emerald-500/5">
                 <div className="flex items-center gap-2 mb-5">
-                   <div className="p-2 bg-emerald-500 rounded-xl text-white"><AlertTriangle size={18}/></div>
-                   <div>
-                     <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Step 1: Classification</p>
-                     <p className="text-[10px] text-emerald-500/70">Define the primary threat category</p>
-                   </div>
+                  <div className="p-2 bg-emerald-500 rounded-xl text-white"><AlertTriangle size={18} /></div>
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">Step 1: Classification</p>
+                    <p className="text-[10px] text-emerald-500/70">Define the primary threat category</p>
+                  </div>
                 </div>
-                
+
                 <div className="space-y-5">
                   <div>
                     <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Threat Category</label>
-                    <select 
-                      value={diagnosticCategory} 
-                      onChange={e => { setDiagnosticCategory(e.target.value); setDiagnosticSymptom(''); }} 
+                    <select
+                      value={diagnosticCategory}
+                      onChange={e => { setDiagnosticCategory(e.target.value); setDiagnosticSymptom(''); }}
                       className="input-field w-full py-4 text-sm font-bold border-emerald-500/30 shadow-inner"
                     >
                       {Object.keys(DIAGNOSTIC_TREE).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   </div>
-                  
+
                   {diagnosticCategory && diagnosticCategory !== 'None' && (
                     <div className="animate-in fade-in slide-in-from-top-4 duration-500">
                       <div className="h-px bg-emerald-500/10 mb-5" />
                       <div className="flex items-center gap-2 mb-5">
-                         <div className="p-2 bg-amber-500 rounded-xl text-white"><Search size={18}/></div>
-                         <div>
-                           <p className="text-xs font-bold uppercase tracking-widest text-amber-600">Step 2: Specific Symptom</p>
-                           <p className="text-[10px] text-amber-500/70">Choose the observed symptom</p>
-                         </div>
+                        <div className="p-2 bg-amber-500 rounded-xl text-white"><Search size={18} /></div>
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-widest text-amber-600">Step 2: Specific Symptom</p>
+                          <p className="text-[10px] text-amber-500/70">Choose the observed symptom</p>
+                        </div>
                       </div>
                       <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Observed Symptom</label>
-                      <select 
-                        value={diagnosticSymptom} 
-                        onChange={e => setDiagnosticSymptom(e.target.value)} 
+                      <select
+                        value={diagnosticSymptom}
+                        onChange={e => setDiagnosticSymptom(e.target.value)}
                         className="input-field w-full py-4 text-sm font-bold border-amber-500/30 shadow-inner"
                       >
                         <option value="">Select Symptom...</option>
@@ -815,8 +815,8 @@ function Monitoring() {
 
               {/* Guidance Note */}
               <div className="mt-4 p-4 border border-dashed border-themed-muted/20 rounded-2xl flex gap-3 items-center">
-                 <div className="text-themed-muted animate-pulse"><Sprout size={20} /></div>
-                 <p className="text-[10px] text-themed-muted leading-relaxed">Selecting a specific symptom will auto-generate remediation tasks and trigger withhold-period locks on the production floor.</p>
+                <div className="text-themed-muted animate-pulse"><Sprout size={20} /></div>
+                <p className="text-[10px] text-themed-muted leading-relaxed">Selecting a specific symptom will auto-generate remediation tasks and trigger withhold-period locks on the production floor.</p>
               </div>
             </div>
 

@@ -97,19 +97,38 @@ function BedVisualizer() {
              </div>
            )}
         </div>
+         {/* Spacing Legend */}
+         <div className="flex justify-center gap-6 text-[10px] font-bold uppercase tracking-widest text-themed-muted border-b border-white/5 pb-2">
+            <div className="flex items-center gap-2">
+               <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+               <span>6" Intra-row Spacing</span>
+            </div>
+            <div className="flex items-center gap-2">
+               <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+               <span>12" Row Spacing</span>
+            </div>
+         </div>
 
-        {/* Visual Map Rendering */}
-        <div className="w-full h-[180px] bg-[#3e2723] rounded-xl shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] overflow-x-auto overflow-y-hidden border border-amber-900/50 my-6 shrink-0 custom-scrollbar">
-           <div className="relative h-full py-4 px-10 flex flex-col justify-between" style={{ minWidth: `${Math.max(100, plantsPerRow * 4)}%` }}>
-               {/* Grid markings */}
-               <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
-               
-               {/* Nasturtiums Top Edge */}
-               {showNasturtiums && (
-                 <div className="absolute top-1 left-8 right-8 flex justify-between z-20">
-                    {[...Array(nasturtiumPerRow)].map((_, i) => <div key={'n1'+i} className="w-2.5 h-2.5 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.6)]" />)}
-                 </div>
-               )}
+         {/* Visual Map Rendering */}
+         <div className="w-full h-[220px] bg-[#3e2723] rounded-3xl shadow-[inset_0_4px_30px_rgba(0,0,0,0.6)] overflow-x-auto overflow-y-hidden border-4 border-amber-900/40 my-4 shrink-0 custom-scrollbar relative">
+            <div className="relative h-full py-8 px-14 flex flex-col justify-between" style={{ minWidth: `${Math.max(100, plantsPerRow * 5)}%` }}>
+                {/* Grid markings */}
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+                
+                {/* Measurement Overlays */}
+                <div className="absolute left-3 top-[30%] bottom-[30%] w-[2px] bg-indigo-500/40 flex flex-col justify-center items-center">
+                   <span className="bg-indigo-600 text-[9px] text-white px-1.5 py-0.5 rounded-full rotate-[-90deg] whitespace-nowrap font-bold">12" ROW</span>
+                </div>
+                <div className="absolute top-3 left-20 right-20 h-[2px] bg-emerald-500/40 flex justify-center items-center">
+                   <span className="bg-emerald-600 text-[9px] text-white px-1.5 py-0.5 rounded-full font-bold">6" PLANT SPACING</span>
+                </div>
+
+                {/* Nasturtiums Top Edge */}
+                {showNasturtiums && (
+                  <div className="absolute top-1.5 left-10 right-10 flex justify-between z-20">
+                     {[...Array(nasturtiumPerRow)].map((_, i) => <div key={'n1'+i} className="w-3 h-3 bg-amber-400 rounded-full shadow-[0_0_10px_rgba(251,191,36,0.5)]" />)}
+                  </div>
+                )}
 
                {/* Chives Line 1 */}
                {showChives && (
@@ -164,7 +183,7 @@ function BedVisualizer() {
 
         <div className="flex items-center gap-2 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-600 dark:text-emerald-400">
            <ShieldAlert size={16} className="shrink-0" />
-           <p>This layout uses the <strong>Bukidnon Push-Pull IPM Defense</strong>. It maintains exactly 6-inch (15cm) basil spacing in 3 rows for airflow to combat Downy Mildew, scaling dynamically to your required yield.</p>
+           <p>This layout uses the <strong>Bukidnon Push-Pull IPM Defense</strong>. It maintains exactly 6-inch (15cm) intra-row spacing and <strong>12-inch (30cm) row spacing</strong> for airflow to combat Downy Mildew.</p>
         </div>
       </div>
     </div>
