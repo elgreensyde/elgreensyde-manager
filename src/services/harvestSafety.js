@@ -7,7 +7,7 @@ import db from './db';
  * @param {string} targetType - 'plot' or 'batch'
  * @param {object} crop - full crop object from library
  */
-export async function checkHarvestSafety(targetId, targetType, crop) {
+export async function checkHarvestSafety(targetId, targetType, crop = {}) {
   const today = new Date();
   const reasons = [];
   let status = 'Safe';

@@ -84,8 +84,8 @@ function Batches() {
         cropPart = crop.common_name.substring(0,3).toUpperCase();
       }
     }
-    const rand = Math.floor(Math.random() * 900) + 100;
-    setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: `${prefix.toUpperCase()}-${cropPart}-${rand}` });
+    const suffix = Date.now().toString().slice(-6); 
+    setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: `${prefix.toUpperCase()}-${cropPart}-${suffix}` });
   };
 
   const generateRandomBedCode = () => `BED-${Math.floor(Math.random() * 9000) + 1000}`;
@@ -98,7 +98,10 @@ function Batches() {
     // Sweet Basil Override (14 days germ/rooting)
     const daysOffset = (crop.common_name === 'Sweet Basil (Ocimum basilicum)') ? 14 : (crop.rooting_or_germ_days || 0);
 
+    // Robust parsing for mobile browsers
     const date = new Date(startDateStr);
+    if (isNaN(date.getTime())) return '';
+    
     date.setDate(date.getDate() + daysOffset);
     return date.toISOString().split('T')[0];
   };
@@ -117,12 +120,20 @@ function Batches() {
   const filteredTrays = trays.filter(t => {
     const crop = getCrop(t.crop_id);
     return !search || t.tray_code?.toLowerCase().includes(search.toLowerCase()) || (crop?.common_name || '').toLowerCase().includes(search.toLowerCase());
-  }).sort((a, b) => new Date(b.sowing_date) - new Date(a.sowing_date));
+  }).sort((a, b) => {
+    const dateA = new Date(a.sowing_date).getTime();
+    const dateB = new Date(b.sowing_date).getTime();
+    return (dateB || 0) - (dateA || 0);
+  });
 
   const filteredBatches = batches.filter(b => {
     const crop = getCrop(b.crop_id);
     return !search || b.batch_code?.toLowerCase().includes(search.toLowerCase()) || (crop?.common_name || '').toLowerCase().includes(search.toLowerCase());
-  }).sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  }).sort((a, b) => {
+    const dateA = new Date(a.start_date).getTime();
+    const dateB = new Date(b.start_date).getTime();
+    return (dateB || 0) - (dateA || 0);
+  });
 
   const filteredPlots = plots.filter(p => {
     const crop = getCrop(p.crop_id);
@@ -386,6 +397,8 @@ function Batches() {
     if (!activePlotForHarvest) return;
     try {
       const yieldWeight = parseFloat(harvestForm.yield_weight_g) || 0;
+      console.log('Logging harvest for:', activePlotForHarvest.plot_code, 'Yield:', yieldWeight);
+      
       await db.insert('harvest_logs', {
          plot_id: activePlotForHarvest.id || activePlotForHarvest.plot_id,
          harvest_date: harvestForm.harvest_date,
@@ -395,18 +408,35 @@ function Batches() {
          notes: harvestForm.notes
       });
 
-      // Auto-update to inventory (Convert grams to KG)
+      // Auto-update to inventory (Standardize to Grams for Schema compatibility)
       if (yieldWeight > 0) {
          const crop = getCrop(activePlotForHarvest.crop_id);
-         const kgWeight = yieldWeight / 1000;
-         const inventory = await db.getAll('inventory') || [];
-         const existing = crop ? inventory.find(i => i.product_name.toLowerCase().includes(crop.common_name.toLowerCase())) : null;
-         
-         if (existing) {
-             await db.update('inventory', existing.sku_id || existing.id, { current_stock: parseFloat(existing.current_stock) + kgWeight });
-         } else if (crop) {
-             const tempSku = `HARV-${crop.common_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random() * 900) + 100}`;
-             await db.insert('inventory', { sku_code: tempSku, product_name: `${crop.common_name} (Fresh)`, sales_format: 'Kg', current_stock: kgWeight, restock_alert_level: 1 });
+         if (!crop) {
+             console.warn('Harvest: No crop metadata found to update inventory.');
+         } else {
+             const inventory = await db.getAll('inventory') || [];
+             // Broad match to handle name variations
+             const existing = inventory.find(i => 
+                i.product_name.toLowerCase().includes(crop.common_name.toLowerCase()) || 
+                (i.sku_code && i.sku_code.includes(crop.common_name.substring(0,3).toUpperCase()))
+             );
+             
+             if (existing) {
+                 console.log('Updating existing inventory SKU:', existing.sku_code);
+                 await db.update('inventory', existing.sku_id || existing.id, { 
+                    current_stock: parseFloat(existing.current_stock) + yieldWeight 
+                 });
+             } else {
+                 console.log('Creating new inventory SKU for:', crop.common_name);
+                 const tempSku = `HARV-${crop.common_name.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-6)}`;
+                 await db.insert('inventory', { 
+                    sku_code: tempSku, 
+                    product_name: `${crop.common_name} (Fresh)`, 
+                    sales_format: 'Grams', 
+                    current_stock: yieldWeight, 
+                    restock_alert_level: 100 
+                 });
+             }
          }
       }
 
@@ -417,8 +447,8 @@ function Batches() {
       setSafetyAssessment(null);
       load();
     } catch(err) {
-      alert(err.message);
-      toast.error('Could not log harvest.');
+      console.error('Harvest Error Details:', err);
+      toast.error(`Database Error: ${err.message || 'Operation failed'}`);
     }
   };
 

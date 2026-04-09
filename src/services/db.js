@@ -69,7 +69,7 @@ export const db = {
       .single();
     if (error) {
       console.error(`db.insert(${table}):`, error.message);
-      return null;
+      throw new Error(error.message);
     }
     return data;
   },
@@ -82,7 +82,7 @@ export const db = {
       .select();
     if (error) {
       console.error(`db.insertMany(${table}):`, error.message);
-      return [];
+      throw new Error(error.message);
     }
     return data || [];
   },
@@ -97,7 +97,7 @@ export const db = {
       .single();
     if (error) {
       console.error(`db.update(${table}, ${id}):`, error.message);
-      return null;
+      throw new Error(error.message);
     }
     return data;
   },
@@ -110,7 +110,7 @@ export const db = {
       .eq(getPK(table), id);
     if (error) {
       console.error(`db.delete(${table}, ${id}):`, error.message);
-      return false;
+      throw new Error(error.message);
     }
     return true;
   },
@@ -123,6 +123,7 @@ export const db = {
     else if (operator === 'gte') query = query.gte(column, value);
     else if (operator === 'lt') query = query.lt(column, value);
     else if (operator === 'gt') query = query.gt(column, value);
+    else if (operator === 'neq') query = query.neq(column, value);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) {
       console.error(`db.query(${table}):`, error.message);

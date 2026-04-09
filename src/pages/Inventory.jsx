@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Package, Search, X, RotateCcw, Edit3, Trash2, ShieldAlert, Droplets, Leaf, AlertTriangle, FlaskConical } from 'lucide-react';
+import { Plus, Package, Search, X, RotateCcw, Edit3, Trash2, ShieldAlert, Droplets, Leaf, AlertTriangle, FlaskConical, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
 import { confirmAction } from '../services/dialogService';
@@ -257,6 +257,9 @@ function Inventory() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
             <input type="text" placeholder={activeTab === 'products' ? 'Search SKUs...' : 'Search consumables...'} value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-10" />
           </div>
+          <button onClick={() => { load(); toast.success('Inventory synced'); }} className="p-3 rounded-xl border hover:opacity-70 transition-all shrink-0" style={{ background: 'var(--color-bg-card)', borderColor: 'var(--color-border)' }}>
+            <RefreshCw size={18} style={{ color: 'var(--color-text-muted)' }} className={loading ? 'animate-spin' : ''} />
+          </button>
           {activeTab === 'consumables' && (
             <select value={inputTypeFilter} onChange={e => setInputTypeFilter(e.target.value)} className="input-field w-auto">
               <option value="">All Types</option>
@@ -392,7 +395,10 @@ function Inventory() {
             <form onSubmit={handleProductSubmit} className="space-y-4">
               <div>
                 <label className="text-xs text-themed-muted block mb-1">SKU Code *</label>
-                <input type="text" required value={productForm.sku_code} onChange={e => setProductForm({...productForm, sku_code: e.target.value})} className="input-field w-full" placeholder="SKU-BSL-POT" />
+                <div className="flex gap-2">
+                  <input type="text" required value={productForm.sku_code} onChange={e => setProductForm({...productForm, sku_code: e.target.value})} className="input-field flex-1" placeholder="SKU-BSL-POT" />
+                  <button type="button" onClick={() => setProductForm({...productForm, sku_code: `SKU-${productForm.product_name ? productForm.product_name.substring(0,3).toUpperCase() : 'ITM'}-${Math.floor(Math.random()*900)+100}`})} className="btn-secondary !py-1 !px-3 text-xs bg-black/10 hover:bg-black/20 text-themed-muted border border-white/10 dark:border-white/5 rounded-lg">Auto</button>
+                </div>
               </div>
               <div>
                 <label className="text-xs text-themed-muted block mb-1">Product Name *</label>
