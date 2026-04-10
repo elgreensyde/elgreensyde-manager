@@ -95,7 +95,8 @@ function Batches() {
         cropPart = crop.common_name.substring(0,3).toUpperCase();
       }
     }
-    const suffix = `${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90) + 10}`;
+    // Increased randomness for unique constraint safety
+    const suffix = `${Math.floor(Math.random() * 900000) + 100000}`;
     setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: `${prefix.toUpperCase()}-${cropPart}-${suffix}` });
   };
 
@@ -176,7 +177,7 @@ function Batches() {
       } else {
         const newTray = await db.insert('trays', dataToSave);
         if (newTray) {
-           await lifecycleScheduler.generateTaskChain(newTray.tray_id || newTray.id, 'batch', dataToSave.sowing_date, dataToSave.crop_id);
+           await lifecycleScheduler.generateTaskChain(newTray.tray_id || newTray.id, 'tray', dataToSave.sowing_date, dataToSave.crop_id);
         }
       }
       toast.success(editingTrayId ? 'Tray updated!' : 'Tray created & Scheduled!');
@@ -206,7 +207,7 @@ function Batches() {
   };
 
   const deleteTray = async (id) => {
-    if(await confirmAction('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)')) {
+    if(await confirmAction('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)', { confirmText: 'Yes, Delete' })) {
       try {
         await lifecycleScheduler.cleanupTasks(id, 'tray');
         await db.delete('trays', id);
@@ -305,7 +306,7 @@ function Batches() {
   };
 
   const deletePlot = async (id) => {
-    if(await confirmAction('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)')) {
+    if(await confirmAction('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)', { confirmText: 'Yes, Delete' })) {
       try {
         // Remove linked tasks first to satisfy FK constraints in non-cascade schemas.
         await lifecycleScheduler.cleanupTasks(id, 'plot', { includeAllStatuses: true });
@@ -323,6 +324,16 @@ function Batches() {
   const handleCreateBatch = async (e) => {
     e.preventDefault();
     try {
+      // BUG-002: Pre-submission uniqueness check
+      if (!editingBatchId) {
+        const { data: existing } = await supabase.from('batches').select('batch_id').eq('batch_code', batchForm.batch_code).maybeSingle();
+        if (existing) {
+          toast.error("Batch Code already exists! Regenerating...");
+          generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
+          return;
+        }
+      }
+
       const dataToSave = {
          ...batchForm,
          initial_quantity: parseInt(batchForm.initial_quantity) || 0,
@@ -350,22 +361,46 @@ function Batches() {
       setEditingBatchId(null);
       load();
     } catch (err) {
-      alert(err.message);
-      if(err.message.includes("batches_batch_code_key")) toast.error("Batch Code already exists! Please use a unique code.");
-      else toast.error("Error saving batch.");
+      console.error('Batch error:', err);
+      if(err.message.includes("batches_batch_code_key")) {
+        toast.error("Batch Code already exists! Please use a unique code.");
+        generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
+      } else {
+        toast.error(`Error: ${err.message || 'Operation failed'}`);
+      }
     }
   };
 
   const deleteBatch = async (id) => {
-    if(await confirmAction('Archive this batch and delete all pending tasks?')) {
-      try {
-        await db.update('batches', id, { status: 'Archived' });
-        await lifecycleScheduler.cleanupTasks(id, 'batch');
-        toast.success('Batch archived.');
-        load();
-      } catch (err) {
-        alert(err.message);
-        toast.error('Failed to archive batch.');
+    const batch = batches.find(b => b.batch_id === id || b.id === id);
+    if (!batch) return;
+
+    // FEAT-001: Check for "historical data" (Completed status or maintenance logs)
+    const hasHistory = batch.status === 'Completed' || maintenanceRecords.some(m => m.batch_id === id || (m.target_ids && m.target_ids.includes(id)));
+    
+    if (hasHistory) {
+      // Only Archive allowed if there is history
+      if(await confirmAction('Archive this mature batch? This hides it from active view but retains historical data. Pending tasks will be deleted.', { confirmText: 'Yes, Archive', confirmColor: 'bg-amber-600 hover:bg-amber-700' })) {
+        try {
+          await db.update('batches', id, { status: 'Archived' });
+          await lifecycleScheduler.cleanupTasks(id, 'batch');
+          toast.success('Batch archived.');
+          load();
+        } catch (err) {
+          toast.error('Failed to archive batch.');
+        }
+      }
+    } else {
+      // Offer Hard Delete if it's an erroneous creation (no history)
+      if(await confirmAction('This batch has no historical data. Permanently delete it and all linked tasks?', { confirmText: 'Yes, Hard Delete', confirmColor: 'bg-red-600 hover:bg-red-700' })) {
+        try {
+          await lifecycleScheduler.cleanupTasks(id, 'batch', { includeAllStatuses: true });
+          await db.delete('batches', id);
+          toast.success('Batch and tasks permanently deleted.');
+          load();
+        } catch (err) {
+          toast.error('Failed to delete batch.');
+        }
       }
     }
   };
@@ -377,8 +412,9 @@ function Batches() {
   };
 
   const moveToInventory = async (batch) => {
-    const qty = prompt(`How many units survived to be sent to inventory? (Started with ${batch.initial_quantity})`, batch.initial_quantity);
-    if (!qty) return;
+    const qty = await promptAction(`How many units survived to be sent to inventory? (Started with ${batch.initial_quantity})`, batch.initial_quantity);
+    if (qty === null) return; // User cancelled
+    
     const finalQty = parseInt(qty);
     if (isNaN(finalQty)) return toast.error("Invalid amount");
 

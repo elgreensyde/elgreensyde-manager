@@ -107,22 +107,28 @@ const lifecycleScheduler = {
     const stages = crop.stages || [];
     for (const stage of stages) {
       if (stage.name.toLowerCase() === 'nursery') continue;
+      
+      const offsetDays = parseInt(stage.days);
+      if (isNaN(offsetDays)) {
+        console.warn(`lifecycleScheduler: Skipping stage "${stage.name}" due to invalid days:`, stage.days);
+        continue;
+      }
 
       const stageDate = new Date(currentBaseDate);
-      stageDate.setDate(currentBaseDate.getDate() + stage.days);
+      stageDate.setDate(currentBaseDate.getDate() + offsetDays);
       
       const category = stage.name.toLowerCase().includes('harvest') ? 'Harvest' : 
                       (stage.name.toLowerCase().includes('transplant') || stage.name.toLowerCase().includes('sow')) ? 'Transplant' :
                       'Maintenance';
 
-      const title = `${stage.name}: ${targetType === 'batch' ? 'Batch' : 'Plot'} Check`.trim();
+      const title = `${stage.name}: ${targetType === 'tray' ? 'Tray' : targetType === 'batch' ? 'Batch' : 'Plot'} Check`.trim();
       if (title && !title.includes('undefined')) {
         tasksToCreate.push({
           title,
           due_date: stageDate.toISOString().split('T')[0],
           priority: 'Medium',
           category,
-          [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
+          [targetType === 'tray' ? 'tray_id' : targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
           is_auto_generated: true
         });
       }
@@ -131,17 +137,25 @@ const lifecycleScheduler = {
     // 2. Generation: Fertilizer Schedule
     const fertSchedule = crop.fertilizer_schedule || [];
     for (const fert of fertSchedule) {
-      const fertDate = new Date(startDate);
-      fertDate.setDate(startDate.getDate() + (fert.week * 7));
+      const offsetWeeks = parseInt(fert.week);
+      if (isNaN(offsetWeeks)) {
+        // Some schedules use "stage" names instead of weeks; skip for task generation if no week provided
+        continue;
+      }
 
-      const title = `Apply ${fert.input} (Fert Cycle)`.trim();
+      const fertDate = new Date(currentBaseDate);
+      fertDate.setDate(currentBaseDate.getDate() + (offsetWeeks * 7));
+
+      const inputName = fert.input || fert.product || 'Nutrients';
+      const title = `Apply ${inputName} (Fert Cycle)`.trim();
+      
       if (title && !title.includes('undefined')) {
         tasksToCreate.push({
           title,
           due_date: fertDate.toISOString().split('T')[0],
           priority: 'High',
           category: 'Fertilize',
-          [targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
+          [targetType === 'tray' ? 'tray_id' : targetType === 'batch' ? 'batch_id' : 'plot_id']: targetId,
           is_auto_generated: true,
           weather_sensitive: true
         });
@@ -176,7 +190,7 @@ const lifecycleScheduler = {
     await db.update('tasks', taskId, { due_date: finalLeadDate });
 
     // Find and shift all SUBSEQUENT tasks for this target
-    const column = task.batch_id ? 'batch_id' : 'plot_id';
+    const column = task.tray_id ? 'tray_id' : task.batch_id ? 'batch_id' : 'plot_id';
     const targetId = task[column];
 
     const { data: futureTasks } = await supabase

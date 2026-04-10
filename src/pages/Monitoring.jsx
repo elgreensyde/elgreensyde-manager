@@ -47,6 +47,9 @@ const QUICK_LOG_TYPES = [
   { id: 'issue', label: 'Issue Spotted', icon: AlertTriangle, color: '#f59e0b', category: null },
 ];
 
+const ISSUE_CATEGORIES = ['Pest', 'Disease', 'Irrigation', 'Equipment', 'Nutrient Deficiency', 'Other'];
+const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
+
 function Monitoring() {
   const [plots, setPlots] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -55,6 +58,7 @@ function Monitoring() {
   const [openIssues, setOpenIssues] = useState([]);
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [consumables, setConsumables] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Session flow state
@@ -71,7 +75,15 @@ function Monitoring() {
 
   // Quick Log state
   const [quickLogType, setQuickLogType] = useState(null); // spray | feed | issue
-  const [quickLogForm, setQuickLogForm] = useState({ target_ids: [], method_product: '', dosage_rate: '', notes: '' });
+  const [quickLogForm, setQuickLogForm] = useState({ 
+    target_ids: [], 
+    input_id: '', 
+    dosage_rate: '', 
+    notes: '', 
+    amount_to_deduct: '0',
+    issue_category: 'Pest',
+    severity: 'Medium'
+  });
 
   // Session history
   const [showHistory, setShowHistory] = useState(false);
@@ -81,17 +93,19 @@ function Monitoring() {
 
   const load = async () => {
     try {
-      const [plotsData, batchesData, cropsData, invData] = await Promise.all([
+      const [plotsData, batchesData, cropsData, invData, consumableData] = await Promise.all([
         db.getAll('plots'),
         db.getAll('batches'),
         db.getAll('crops'),
         db.getAll('inventory'),
+        db.getAll('inputs_inventory'),
       ]);
 
       setPlots(plotsData || []);
       setBatches((batchesData || []).filter(b => b.status === 'Nursery'));
       setCrops(cropsData || []);
       setInventory(invData || []);
+      setConsumables(consumableData || []);
 
       // Graceful fallback for optional monitoring tables
       try {
@@ -136,31 +150,59 @@ function Monitoring() {
   };
 
   const submitQuickLog = async () => {
-    if (quickLogType.id === 'issue') {
-      if (!quickLogForm.notes) return toast.error('Describe the issue briefly.');
-      await supabase.from('flagged_issues').insert({
-        issue_type: 'General',
-        severity: 'Medium',
-        description: quickLogForm.notes,
-        status: 'Open'
+    try {
+      if (quickLogType.id === 'issue') {
+        if (!quickLogForm.notes) return toast.error('Describe the issue briefly.');
+        if (quickLogForm.target_ids.length === 0) return toast.error('Select the target location.');
+
+        // Atomically report issue and generate task for each target
+        await Promise.all(quickLogForm.target_ids.map(targetId => {
+          const target = allTargets.find(t => t.id === targetId);
+          return db.rpc('report_issue_with_task', {
+            p_target_type: target.type,
+            p_target_id: targetId,
+            p_issue_category: quickLogForm.issue_category,
+            p_description: quickLogForm.notes,
+            p_severity: quickLogForm.severity
+          });
+        }));
+        
+        toast.success(`Issue reported and ${quickLogForm.target_ids.length} task(s) created!`);
+      } else {
+        if (!quickLogForm.input_id) return toast.error('Select the product used.');
+        if (quickLogForm.target_ids.length === 0) return toast.error('Select at least one target.');
+        
+        const amountPerTarget = parseFloat(quickLogForm.amount_to_deduct) || 0;
+        const totalAmount = amountPerTarget * quickLogForm.target_ids.length;
+
+        // Atomically log maintenance and deduct inventory
+        await db.rpc('log_maintenance_with_deduction', {
+          p_action_category: quickLogType.category,
+          p_target_ids: quickLogForm.target_ids,
+          p_input_id: quickLogForm.input_id,
+          p_dosage_rate: quickLogForm.dosage_rate,
+          p_notes: quickLogForm.notes,
+          p_amount_to_deduct: totalAmount
+        });
+
+        toast.success(`${quickLogType.label} logged! Stock reconciled.`);
+      }
+      
+      setQuickLogType(null);
+      setQuickLogForm({ 
+        target_ids: [], 
+        input_id: '', 
+        dosage_rate: '', 
+        notes: '', 
+        amount_to_deduct: '0', 
+        issue_category: 'Pest', 
+        severity: 'Medium' 
       });
-      toast.success('Issue flagged!');
-    } else {
-      if (!quickLogForm.method_product) return toast.error('Enter the product used.');
-      if (quickLogForm.target_ids.length === 0) return toast.error('Select at least one target.');
-      await db.insert('maintenance_logs', {
-        event_date: new Date().toISOString().split('T')[0],
-        action_category: quickLogType.category,
-        target_ids: quickLogForm.target_ids,
-        method_product: quickLogForm.method_product,
-        dosage_rate: quickLogForm.dosage_rate,
-        notes: quickLogForm.notes,
-      });
-      toast.success(`${quickLogType.label} logged!`);
+      load();
+    } catch (err) {
+      console.error(err);
+      toast.error('Logging failed. Check database functions.');
     }
-    setQuickLogType(null);
-    setQuickLogForm({ target_ids: [], method_product: '', dosage_rate: '', notes: '' });
-    load();
   };
 
   /* ---- SESSION FLOW ---- */
@@ -476,60 +518,105 @@ function Monitoring() {
               <button onClick={() => setQuickLogType(null)} className="ml-auto"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
             </div>
 
-            <div className="space-y-4 max-h-[65vh] overflow-y-auto">
-              {quickLogType.id !== 'issue' && (
+            <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+              {quickLogType.id !== 'issue' ? (
                 <>
                   <div>
-                    <label className="text-xs text-themed-muted block mb-2">Product / Chemical Used *</label>
-                    <input type="text" value={quickLogForm.method_product}
-                      onChange={e => setQuickLogForm(p => ({ ...p, method_product: e.target.value }))}
-                      className="input-field w-full" placeholder="e.g. K-Bicarb spray, Urea 1g/L..." />
+                    <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Product / Chemical Used *</label>
+                    <select 
+                      value={quickLogForm.input_id}
+                      onChange={e => setQuickLogForm(p => ({ ...p, input_id: e.target.value }))}
+                      className="input-field w-full py-3"
+                    >
+                      <option value="">-- Select from Inventory --</option>
+                      {consumables.sort((a,b) => a.product_name.localeCompare(b.product_name)).map(c => (
+                        <option key={c.input_id} value={c.input_id}>
+                          {c.product_name} ({c.current_stock} {c.stock_unit} left)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <div>
-                    <label className="text-xs text-themed-muted block mb-2">Dosage / Rate</label>
-                    <input type="text" value={quickLogForm.dosage_rate}
-                      onChange={e => setQuickLogForm(p => ({ ...p, dosage_rate: e.target.value }))}
-                      className="input-field w-full" placeholder="e.g. 2mL/L" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-themed-muted block mb-2">Select Targets (Plots & Batches)</label>
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {allTargets.map(t => {
-                        const selected = quickLogForm.target_ids.includes(t.id);
-                        return (
-                          <button key={t.id} onClick={() => toggleQuickTarget(t.id)}
-                            className="w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors"
-                            style={{ background: selected ? '#10b98120' : 'var(--color-bg-card)', border: `1px solid ${selected ? '#10b981' : 'var(--color-border)'}` }}>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'bg-emerald-500 border-emerald-500' : ''}`} style={{ borderColor: selected ? '#10b981' : 'var(--color-border)' }}>
-                              {selected && <Check size={11} className="text-white" />}
-                            </div>
-                            <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>{t.label}</span>
-                            <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded" style={{ background: t.type === 'batch' ? '#3b82f620' : '#10b98120', color: t.type === 'batch' ? '#60a5fa' : '#10b981' }}>
-                              {t.type === 'batch' ? 'Batch' : 'Plot'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                      {allTargets.length === 0 && (
-                        <p className="text-sm text-center py-3" style={{ color: 'var(--color-text-muted)' }}>No active plots or batches found.</p>
-                      )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Deduction (per target)</label>
+                      <input type="number" value={quickLogForm.amount_to_deduct}
+                        onChange={e => setQuickLogForm(p => ({ ...p, amount_to_deduct: e.target.value }))}
+                        className="input-field w-full" placeholder="e.g. 50" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Dosage / Rate</label>
+                      <input type="text" value={quickLogForm.dosage_rate}
+                        onChange={e => setQuickLogForm(p => ({ ...p, dosage_rate: e.target.value }))}
+                        className="input-field w-full" placeholder="e.g. 2mL/L" />
                     </div>
                   </div>
                 </>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Issue Category *</label>
+                    <select 
+                      value={quickLogForm.issue_category}
+                      onChange={e => setQuickLogForm(p => ({ ...p, issue_category: e.target.value }))}
+                      className="input-field w-full py-3"
+                    >
+                      {ISSUE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Severity *</label>
+                    <select 
+                      value={quickLogForm.severity}
+                      onChange={e => setQuickLogForm(p => ({ ...p, severity: e.target.value }))}
+                      className="input-field w-full py-3"
+                    >
+                      {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </div>
               )}
 
               <div>
-                <label className="text-xs text-themed-muted block mb-2">
-                  {quickLogType.id === 'issue' ? 'Describe the Issue *' : 'Notes (optional)'}
+                <label className="text-xs text-themed-muted font-bold block mb-2 px-1">Select Targets (Location) *</label>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {allTargets.map(t => {
+                    const selected = quickLogForm.target_ids.includes(t.id);
+                    return (
+                      <button key={t.id} onClick={() => toggleQuickTarget(t.id)}
+                        className="w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all"
+                        style={{ 
+                          background: selected ? 'var(--color-bg-card)' : 'var(--color-bg-primary)', 
+                          border: `1px solid ${selected ? '#10b981' : 'var(--color-border)'}`,
+                          boxShadow: selected ? '0 0 0 1px #10b98120' : 'none'
+                        }}>
+                        <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${selected ? 'bg-emerald-500 border-emerald-500' : 'border-gray-500/30'}`}>
+                          {selected && <Check size={11} className="text-white" strokeWidth={3} />}
+                        </div>
+                        <span className={`text-sm ${selected ? 'font-bold' : ''}`} style={{ color: selected ? 'var(--color-text-primary)' : 'var(--color-text-secondary)' }}>{t.label}</span>
+                        <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter" style={{ background: t.type === 'batch' ? '#3b82f615' : '#10b98115', color: t.type === 'batch' ? '#60a5fa' : '#10b981' }}>
+                          {t.type === 'batch' ? 'Nursery' : 'Plot'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {allTargets.length === 0 && (
+                    <p className="text-xs text-center py-4 opacity-50">No active plots or batches found.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-themed-muted font-bold block mb-2 px-1">
+                  {quickLogType.id === 'issue' ? 'Diagnostic Notes *' : 'Action Notes'}
                 </label>
                 <textarea value={quickLogForm.notes} rows={2}
                   onChange={e => setQuickLogForm(p => ({ ...p, notes: e.target.value }))}
-                  className="input-field w-full" placeholder={quickLogType.id === 'issue' ? 'e.g. Yellowing on PLT-BSL-02 near the drain...' : 'e.g. Applied to foliar only...'} />
+                  className="input-field w-full" placeholder={quickLogType.id === 'issue' ? 'e.g. Observable aphids on undersides of 3 pots...' : 'e.g. Mixed with sticker agent...'} />
               </div>
             </div>
 
-            <button onClick={submitQuickLog} className="btn-primary w-full justify-center !py-4 mt-4 text-base">
-              Log Now ✓
+            <button onClick={submitQuickLog} className="btn-primary w-full justify-center !py-4 mt-6 text-base font-bold shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all">
+              {quickLogType.id === 'issue' ? 'Report & Create Task ✓' : 'Log & Deduct Stock ✓'}
             </button>
           </div>
         </div>

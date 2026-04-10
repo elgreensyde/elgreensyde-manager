@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Package, Search, X, RotateCcw, Edit3, Trash2, ShieldAlert, Droplets, Leaf, AlertTriangle, FlaskConical, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import db from '../services/db';
-import { confirmAction } from '../services/dialogService';
+import { confirmAction, promptAction } from '../services/dialogService';
 
 const FORMATS = ['Units', 'Grams'];
 const INPUT_TYPES = ['Organic Pesticide', 'Fungicide', 'Fertilizer', 'Soil Amendment'];
@@ -374,8 +374,8 @@ function Inventory() {
                 </div>
 
                 <div className="flex gap-2 mt-3">
-                  <button onClick={(e) => { e.stopPropagation(); const amt = prompt(`Add stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20">+ Add</button>
-                  <button onClick={(e) => { e.stopPropagation(); const amt = prompt(`Deduct stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, -parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-red-500 bg-red-500/10 hover:bg-red-500/20">− Deduct</button>
+                  <button onClick={async (e) => { e.stopPropagation(); const amt = await promptAction(`Add stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20">+ Add</button>
+                  <button onClick={async (e) => { e.stopPropagation(); const amt = await promptAction(`Deduct stock (${input.stock_unit}):`); if (amt && parseFloat(amt) > 0) adjustInputStock(input, -parseFloat(amt)); }} className="flex-1 text-xs py-1.5 rounded-lg font-medium text-red-500 bg-red-500/10 hover:bg-red-500/20">− Deduct</button>
                 </div>
               </div>
             );

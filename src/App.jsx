@@ -64,10 +64,10 @@ function GlobalDialog() {
                   onClick={() => { data.onCancel(); setData(null); }}>
             Cancel
           </button>
-          <button className={`flex-1 py-3 rounded-xl text-sm font-bold text-white transition-transform active:scale-95 ${data.type === 'confirm' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+          <button className={`flex-1 py-3 rounded-xl text-sm font-bold text-white transition-transform active:scale-95 ${data.type === 'confirm' ? (data.confirmColor || 'bg-red-500 hover:bg-red-600') : 'bg-emerald-500 hover:bg-emerald-600'}`}
                   disabled={data.type === 'prompt' && data.required && !inputValue.trim()}
                   onClick={() => { data.onConfirm(data.type === 'prompt' ? inputValue : true); setData(null); }}>
-            {data.type === 'confirm' ? 'Yes, Delete' : 'Confirm'}
+            {data.type === 'confirm' ? (data.confirmText || 'Yes, Delete') : (data.confirmText || 'Confirm')}
           </button>
         </div>
       </div>
@@ -129,11 +129,24 @@ function App() {
       <GlobalDialog />
       <Toaster 
         position="top-center" 
+        containerStyle={{
+          top: 20,
+          left: 20,
+          bottom: 20,
+          right: 20,
+        }}
         toastOptions={{
+          duration: 3000,
           style: {
             background: 'var(--color-bg-card)',
             color: 'var(--color-text-primary)',
-            border: '1px solid var(--color-border)'
+            border: '1px solid var(--color-border)',
+            borderRadius: '16px',
+            fontSize: '14px',
+            fontWeight: '600',
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+            maxWidth: '350px',
+            width: '100%',
           }
         }} 
       />

@@ -37,6 +37,7 @@ function POS() {
   const [editPriceValue, setEditPriceValue] = useState('');
   
   const [loading, setLoading] = useState(true);
+  const [busySkus, setBusySkus] = useState(new Set()); 
   const [reservedQtys, setReservedQtys] = useState({}); 
   const receiptRef = useRef(null);
 
@@ -234,23 +235,33 @@ function POS() {
   };
 
   const handleQuickSell = async (sku) => {
+    const skuId = sku.sku_id || sku.id;
+    if (busySkus.has(skuId)) return;
+
     const price = getPrice(sku);
     const available = getAvailable(sku);
 
     if (price === 0) return toast.error('Set a retail price first (price icon).');
     if (available <= 0) return toast.error('No available stock for this item.');
 
+    setBusySkus(prev => new Set(prev).add(skuId));
     try {
       const newStock = Math.max(0, parseFloat(sku.current_stock) - 1);
-      await db.update('inventory', sku.sku_id || sku.id, { current_stock: newStock });
+      await db.update('inventory', skuId, { current_stock: newStock });
 
       const ledgerSaved = await recordRevenueEntry(price, `Quick Sell — ${sku.product_name} (Walk-in / Cash)`);
       if (ledgerSaved) toast.success(`${sku.product_name} sold for ${fmt(price)}!`);
       else toast.error('Sale done, but ledger write is blocked by RLS.');
-      load(); 
+      await load(); 
     } catch (err) {
       toast.error('Quick Sell failed. Check console.');
       console.error(err);
+    } finally {
+      setBusySkus(prev => {
+        const next = new Set(prev);
+        next.delete(skuId);
+        return next;
+      });
     }
   };
 
@@ -338,8 +349,8 @@ function POS() {
                   <div key={sku.sku_id || sku.id} className="relative group">
                     <button 
                       onClick={() => addToCart(sku)} 
-                      className={`glass-card hover:-translate-y-1 hover:shadow-lg transition-all p-4 text-left flex flex-col justify-between w-full min-h-[120px] ${isOutOfStock ? 'opacity-40 cursor-not-allowed' : 'bg-gradient-to-br from-white to-gray-50'}`}
-                      disabled={isOutOfStock}
+                      className={`glass-card transition-all p-4 text-left flex flex-col justify-between w-full min-h-[120px] ${isOutOfStock || busySkus.has(sku.sku_id || sku.id) ? 'opacity-40 cursor-not-allowed' : 'bg-gradient-to-br from-white to-gray-50 group-hover:-translate-y-1 group-hover:shadow-lg'}`}
+                      disabled={isOutOfStock || busySkus.has(sku.sku_id || sku.id)}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1">
@@ -365,6 +376,11 @@ function POS() {
                           {isOutOfStock ? 'None left' : `${available} avail.`}
                         </p>
                       </div>
+                      {busySkus.has(sku.sku_id || sku.id) && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/40 rounded-2xl backdrop-blur-[1px]">
+                          <div className="loading-spinner w-5 h-5" />
+                        </div>
+                      )}
                     </button>
                     {/* Set price button */}
                     <button
@@ -378,7 +394,7 @@ function POS() {
                     {sku.sales_format === 'Units' && !isOutOfStock && price > 0 && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleQuickSell(sku); }}
-                        className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-indigo-500 text-white opacity-0 sm:opacity-0 group-hover:opacity-100 shadow-lg shadow-indigo-500/30 transition-all hover:scale-110 active:scale-95"
+                        className={`absolute bottom-2 right-2 p-1.5 rounded-lg bg-indigo-500 text-white opacity-0 sm:opacity-0 group-hover:opacity-100 shadow-lg shadow-indigo-500/30 transition-all hover:scale-110 active:scale-95 ${busySkus.has(sku.sku_id || sku.id) ? 'pointer-events-none' : ''}`}
                         title={`Quick Sell 1x for ${fmt(price)}`}
                       >
                         <Zap size={13} strokeWidth={2.5} />

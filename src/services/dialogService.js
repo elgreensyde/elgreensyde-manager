@@ -5,13 +5,16 @@
  */
 
 // Dispatches a custom event that the <GlobalDialog /> component in App.jsx listens for.
-export const confirmAction = (message) => {
+export const confirmAction = (message, options = {}) => {
+  const { confirmText, confirmColor } = options;
   return new Promise((resolve) => {
     window.dispatchEvent(
       new CustomEvent('show-dialog', {
         detail: {
           type: 'confirm',
           message,
+          confirmText,
+          confirmColor,
           onConfirm: () => resolve(true),
           onCancel: () => resolve(false),
         },

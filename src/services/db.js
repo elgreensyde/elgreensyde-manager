@@ -167,6 +167,16 @@ export const db = {
       .lt('due_date', today);
     if (error) console.error('markOverdueTasks:', error.message);
   },
+
+  // EXECUTE a Supabase RPC function (PostgreSQL Function)
+  async rpc(fn, params) {
+    const { data, error } = await supabase.rpc(fn, params);
+    if (error) {
+      console.error(`db.rpc(${fn}):`, error.message);
+      throw new Error(error.message);
+    }
+    return data;
+  },
 };
 
 export default db;
