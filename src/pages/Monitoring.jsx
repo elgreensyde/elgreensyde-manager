@@ -7,6 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import db from '../services/db';
 import supabase from '../lib/supabase';
+import weatherService from '../services/weatherService';
 
 // --- CONSTANTS ---
 const SESSION_TYPES = [
@@ -60,6 +61,7 @@ function Monitoring() {
   const [inventory, setInventory] = useState([]);
   const [consumables, setConsumables] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
 
   // Session flow state
   const [step, setStep] = useState('home'); // home | nursery | scan | targets | summary
@@ -84,6 +86,19 @@ function Monitoring() {
     issue_category: 'Pest',
     severity: 'Medium'
   });
+
+  const getCropName = (id) => crops.find(c => c.id === id)?.common_name || '—';
+
+  const getAllTargets = () => {
+    const plotTargets = plots
+      .filter(p => p.status === 'Active')
+      .map(p => ({ id: p.plot_id, label: `${p.plot_code} (${getCropName(p.crop_id)})`, type: 'plot' }));
+    const batchTargets = batches
+      .map(b => ({ id: b.batch_id, label: `${b.batch_code} (${getCropName(b.crop_id)})`, type: 'batch' }));
+    return [...plotTargets, ...batchTargets];
+  };
+
+  const allTargets = getAllTargets();
 
   // Session history
   const [showHistory, setShowHistory] = useState(false);
@@ -128,18 +143,7 @@ function Monitoring() {
 
   useEffect(() => { load(); }, []);
 
-  const getCropName = (id) => crops.find(c => c.id === id)?.common_name || '—';
-
   /* ---- QUICK LOG ---- */
-  const getAllTargets = () => {
-    const plotTargets = plots
-      .filter(p => p.status === 'Active')
-      .map(p => ({ id: p.plot_id, label: `${p.plot_code} (${getCropName(p.crop_id)})`, type: 'plot' }));
-    const batchTargets = batches
-      .map(b => ({ id: b.batch_id, label: `${b.batch_code} (${getCropName(b.crop_id)})`, type: 'batch' }));
-    return [...plotTargets, ...batchTargets];
-  };
-
   const toggleQuickTarget = (id) => {
     setQuickLogForm(prev => ({
       ...prev,
@@ -206,7 +210,30 @@ function Monitoring() {
   };
 
   /* ---- SESSION FLOW ---- */
-  const startSession = (type) => {
+  const syncEnvironmentWithWeather = async () => {
+    try {
+      const forecast = await weatherService.getForecast();
+      if (!forecast) return;
+      
+      const rainProb = forecast.precipitation_probability_max?.[0] || 0;
+      const tempMax = forecast.temperature_2m_max?.[0] || 0;
+      const humidityMax = forecast.relative_humidity_2m_max?.[0] || 0;
+
+      // Map weather data to Nursery Env options
+      setNurseryAnswers({
+        nursery_temp: tempMax > 32 ? 'Hot' : tempMax > 28 ? 'Warm' : tempMax > 22 ? 'Normal' : 'Cool',
+        nursery_humidity: humidityMax > 90 ? 'Very High' : humidityMax > 80 ? 'High' : 'Normal',
+        nursery_rain: rainProb > 60 ? 'Heavy Rain' : rainProb > 20 ? 'Light Rain' : 'Dry',
+        nursery_light: rainProb > 50 ? 'Overcast' : 'Full Sun',
+        nursery_airflow: 'Good'
+      });
+      // No toast here to keep it seamless as requested
+    } catch (err) {
+      console.warn('Weather sync failed');
+    }
+  };
+
+  const startSession = async (type) => {
     setSessionType(type);
     setNurseryAnswers({});
     setScanAnswers({});
@@ -217,6 +244,57 @@ function Monitoring() {
     setDiagnosticCategory('');
     setDiagnosticSymptom('');
     setStep('nursery');
+    await syncEnvironmentWithWeather();
+  };
+
+  const dismissAlert = async (alertId) => {
+    await db.update('preventive_alerts', alertId, { dismissed: true });
+    load();
+  };
+
+  const [resolvingIssue, setResolvingIssue] = useState(null);
+  const [resolutionData, setResolutionData] = useState({ action: 'Adjusted Irrigation', notes: '' });
+
+  const handleAlertAction = (alert) => {
+    const targetMatch = alert.message.match(/on ([A-Z0-9\-]+)/);
+    let targetIds = [];
+    
+    if (targetMatch) {
+       const code = targetMatch[1];
+       const found = allTargets.find(t => t.label.includes(code));
+       if (found) targetIds = [found.id];
+    }
+
+    const typeId = alert.message.toLowerCase().includes('fertilizer') || alert.message.toLowerCase().includes('urea') ? 'feed' : 'spray';
+    const type = QUICK_LOG_TYPES.find(t => t.id === typeId);
+    if (!type) return;
+    
+    setQuickLogType(type);
+    setQuickLogForm(p => ({ ...p, target_ids: targetIds, notes: `Responding to Alert: ${alert.message}` }));
+  };
+
+  const submitResolution = async () => {
+    if (!resolvingIssue) return;
+    try {
+      await supabase.from('flagged_issues').update({ 
+        status: 'Closed', 
+        resolved_date: new Date().toISOString().split('T')[0],
+        resolution_notes: `${resolutionData.action}: ${resolutionData.notes}`
+      }).eq('flag_id', resolvingIssue.flag_id);
+
+      await db.insert('maintenance_logs', {
+        event_date: new Date().toISOString().split('T')[0],
+        action_category: 'Issue Resolution',
+        target_ids: [resolvingIssue.target_id],
+        notes: `FIXED: ${resolvingIssue.issue_type} - ${resolutionData.action}. ${resolutionData.notes}`
+      });
+
+      toast.success('Issue resolved & archived!');
+      setResolvingIssue(null);
+      load();
+    } catch (err) {
+      toast.error('Failed to resolve issue.');
+    }
   };
 
   const saveSession = async () => {
@@ -351,16 +429,7 @@ function Monitoring() {
     }
   };
 
-  const dismissAlert = async (alertId) => {
-    await db.update('preventive_alerts', alertId, { dismissed: true });
-    load();
-  };
 
-  const resolveIssue = async (flagId) => {
-    await supabase.from('flagged_issues').update({ status: 'Resolved', resolved_date: new Date().toISOString().split('T')[0] }).eq('flag_id', flagId);
-    toast.success('Issue resolved!');
-    load();
-  };
 
   // --- Step progress indicator ---
   const STEPS = sessionType === 'Daily Scan'
@@ -368,8 +437,6 @@ function Monitoring() {
     : ['Environment', 'Daily Scan', 'Crop Checks'];
 
   const stepIdx = { nursery: 0, scan: 1, targets: 2 };
-
-  const allTargets = getAllTargets();
 
   if (loading) return (
     <div className="flex items-center justify-center min-h-screen">
@@ -399,24 +466,6 @@ function Monitoring() {
 
       <div className="px-5 space-y-5 pb-28">
 
-        {/* Active Alerts */}
-        {activeAlerts.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-muted)' }}>⚡ Auto-Alerts</p>
-            {activeAlerts.slice(0, 3).map(alert => (
-              <div key={alert.alert_id} className="glass-card p-3 flex items-start gap-3" style={{
-                borderLeft: `3px solid ${alert.priority === 'Critical' ? '#ef4444' : alert.priority === 'High' ? '#f59e0b' : '#3b82f6'}`
-              }}>
-                <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" style={{ color: alert.priority === 'Critical' ? '#ef4444' : '#f59e0b' }} />
-                <p className="flex-1 text-sm" style={{ color: 'var(--color-text-primary)' }}>{alert.message}</p>
-                <button onClick={() => dismissAlert(alert.alert_id)} className="p-1 hover:opacity-70 flex-shrink-0">
-                  <X size={14} style={{ color: 'var(--color-text-muted)' }} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* QUICK LOG */}
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--color-text-muted)' }}>⚡ Quick Log</p>
@@ -424,7 +473,7 @@ function Monitoring() {
             {QUICK_LOG_TYPES.map(ql => {
               const Icon = ql.icon;
               return (
-                <button key={ql.id} onClick={() => { setQuickLogType(ql); setQuickLogForm({ target_ids: [], method_product: '', dosage_rate: '', notes: '' }); }}
+                <button key={ql.id} onClick={() => { setQuickLogType(ql); setQuickLogForm({ target_ids: [], input_id: '', dosage_rate: '', notes: '', amount_to_deduct: '0', issue_category: 'Pest', severity: 'Medium' }); }}
                   className="glass-card p-3 flex flex-col items-center gap-1.5 text-center active:scale-95 transition-transform">
                   <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${ql.color}20` }}>
                     <Icon size={20} style={{ color: ql.color }} />
@@ -459,6 +508,53 @@ function Monitoring() {
           </div>
         </div>
 
+        {/* Active Alerts (FEAT-008: Prioritized & Collapsed) */}
+        {activeAlerts.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest shrink-0" style={{ color: 'var(--color-text-muted)' }}>⚡ Precision Alerts ({activeAlerts.length})</p>
+              {activeAlerts.length > 3 && (
+                <button onClick={() => setShowAllAlerts(!showAllAlerts)} className="text-[10px] font-bold text-indigo-400 hover:text-indigo-300">
+                  {showAllAlerts ? 'Collapse' : `View All (${activeAlerts.length - 3} more)`}
+                </button>
+              )}
+            </div>
+            
+            {(showAllAlerts ? activeAlerts : activeAlerts.slice(0, 3)).map((alert, idx) => {
+              const overdueDays = alert.message.match(/(\d+) days/)?.[1];
+              const isOverdue = alert.priority === 'Critical' || alert.priority === 'High';
+              const color = isOverdue ? '#ef4444' : alert.priority === 'High' ? '#f59e0b' : '#3b82f6';
+              
+              const [header, ...rest] = alert.message.split(' on ');
+              const subtext = rest.join(' on ');
+
+              return (
+                <div key={alert.alert_id || `alert-${idx}`} onClick={() => handleAlertAction(alert)}
+                  className="glass-card p-4 flex items-center gap-4 active:scale-[0.98] transition-all cursor-pointer relative overflow-hidden" 
+                  style={{ borderLeft: `4px solid ${color}` }}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: `${color}15` }}>
+                    <AlertTriangle size={18} style={{ color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold truncate" style={{ color: 'var(--color-text-heading)' }}>{header}</h4>
+                    <p className="text-[10px] font-medium opacity-60 truncate" style={{ color: 'var(--color-text-primary)' }}>{subtext || 'System Recommendation'}</p>
+                  </div>
+                  {overdueDays && (
+                    <div className="text-right">
+                       <span className="text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded" style={{ background: `${color}20`, color }}>
+                          {overdueDays}d overdue
+                       </span>
+                    </div>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); dismissAlert(alert.alert_id); }} className="absolute top-2 right-2 p-1 opacity-30 hover:opacity-100">
+                    <X size={12} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* Open Issues */}
         {openIssues.length > 0 && (
           <div>
@@ -468,13 +564,13 @@ function Monitoring() {
                 <div key={issue.flag_id} className="glass-card p-3 flex items-start gap-3"
                   style={{ borderLeft: `3px solid ${issue.severity === 'High' ? '#ef4444' : issue.severity === 'Medium' ? '#f59e0b' : '#64748b'}` }}>
                   <div className="flex-1 min-w-0">
-                    <span className="text-[10px] font-bold" style={{ color: issue.severity === 'High' ? '#ef4444' : '#f59e0b' }}>
+                    <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: issue.severity === 'High' || issue.severity === 'Critical' ? '#ef4444' : '#f59e0b' }}>
                       {issue.severity} · {issue.issue_type}
                     </span>
-                    <p className="text-sm mt-0.5 line-clamp-2" style={{ color: 'var(--color-text-primary)' }}>{issue.description}</p>
+                    <p className="text-sm font-semibold mt-0.5 line-clamp-2" style={{ color: 'var(--color-text-primary)' }}>{issue.description}</p>
                   </div>
-                  <button onClick={() => resolveIssue(issue.flag_id)}
-                    className="text-[10px] px-2.5 py-1 rounded-lg font-bold shrink-0" style={{ background: '#10b981', color: 'white' }}>
+                  <button onClick={() => setResolvingIssue(issue)}
+                    className="text-[10px] px-3 py-1.5 rounded-xl font-bold shrink-0 shadow-lg shadow-emerald-500/10 active:scale-90 transition-transform" style={{ background: '#10b981', color: 'white' }}>
                     Resolve
                   </button>
                 </div>
@@ -506,17 +602,20 @@ function Monitoring() {
       </div>
 
       {/* QUICK LOG MODAL */}
-      {quickLogType && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setQuickLogType(null)} />
-          <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl p-6 border-t" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${quickLogType.color}20` }}>
-                <quickLogType.icon size={20} style={{ color: quickLogType.color }} />
+      {quickLogType && (() => {
+        const QLIcon = quickLogType.icon;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setQuickLogType(null)} />
+            <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl p-6 border-t" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${quickLogType.color}20` }}>
+                  {QLIcon && <QLIcon size={20} style={{ color: quickLogType.color }} />}
+                </div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>Quick: {quickLogType.label}</h2>
+                <button onClick={() => setQuickLogType(null)} className="ml-auto"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
               </div>
-              <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>Quick: {quickLogType.label}</h2>
-              <button onClick={() => setQuickLogType(null)} className="ml-auto"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
-            </div>
+
 
             <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
               {quickLogType.id !== 'issue' ? (
@@ -618,6 +717,46 @@ function Monitoring() {
             <button onClick={submitQuickLog} className="btn-primary w-full justify-center !py-4 mt-6 text-base font-bold shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all">
               {quickLogType.id === 'issue' ? 'Report & Create Task ✓' : 'Log & Deduct Stock ✓'}
             </button>
+          </div>
+        </div>
+      )})}
+      {/* RESOLVE ISSUE MODAL (FEAT-007) */}
+      {resolvingIssue && (
+        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setResolvingIssue(null)} />
+          <div className="relative w-full max-w-sm glass-card p-6 rounded-3xl border border-white/10 animate-slide-up max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
+            <h3 className="text-lg font-display font-bold mb-1" style={{ color: 'var(--color-text-heading)' }}>Resolve Issue</h3>
+            <p className="text-xs mb-6" style={{ color: 'var(--color-text-muted)' }}>Logging corrective action for traceability</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Action Taken *</label>
+                <select 
+                  value={resolutionData.action}
+                  onChange={e => setResolutionData(p => ({ ...p, action: e.target.value }))}
+                  className="input-field w-full py-4 text-sm font-bold shadow-inner"
+                >
+                  <option value="Sprayed Pesticide">Sprayed Pesticide</option>
+                  <option value="Culled Plant">Culled Plant</option>
+                  <option value="Adjusted Irrigation">Adjusted Irrigation</option>
+                  <option value="Manual Pest Removal">Manual Pest Removal</option>
+                  <option value="Applied Fertilizer">Applied Fertilizer</option>
+                  <option value="Other">Other (See notes)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Optional Notes</label>
+                <textarea 
+                  value={resolutionData.notes}
+                  onChange={e => setResolutionData(p => ({ ...p, notes: e.target.value }))}
+                  className="input-field w-full text-sm" 
+                  placeholder="Further details on the fix..."
+                />
+              </div>
+              <button onClick={submitResolution} className="btn-primary w-full !py-4 !rounded-2xl shadow-xl shadow-emerald-500/20 active:scale-95 transition-all">
+                Confirm Resolution ✓
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -839,11 +978,52 @@ function Monitoring() {
         </div>
       </div>
 
+      {/* RESOLVE ISSUE MODAL (FEAT-007) */}
+      {resolvingIssue && (
+        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setResolvingIssue(null)} />
+          <div className="relative w-full max-w-sm glass-card p-6 rounded-3xl border border-white/10 animate-slide-up bg-themed-card max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
+            <h3 className="text-lg font-display font-bold mb-1" style={{ color: 'var(--color-text-heading)' }}>Resolve Issue</h3>
+            <p className="text-xs mb-6" style={{ color: 'var(--color-text-muted)' }}>Logging corrective action for traceability</p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Action Taken *</label>
+                <select 
+                  value={resolutionData.action}
+                  onChange={e => setResolutionData(p => ({ ...p, action: e.target.value }))}
+                  className="input-field w-full py-4 text-sm font-bold shadow-inner"
+                >
+                  <option value="Sprayed Pesticide">Sprayed Pesticide</option>
+                  <option value="Culled Plant">Culled Plant</option>
+                  <option value="Adjusted Irrigation">Adjusted Irrigation</option>
+                  <option value="Manual Pest Removal">Manual Pest Removal</option>
+                  <option value="Applied Fertilizer">Applied Fertilizer</option>
+                  <option value="Other">Other (See notes)</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-themed-muted block mb-2 tracking-tighter">Optional Notes</label>
+                <textarea 
+                  value={resolutionData.notes}
+                  onChange={e => setResolutionData(p => ({ ...p, notes: e.target.value }))}
+                  className="input-field w-full text-sm" 
+                  placeholder="Further details on the fix..."
+                />
+              </div>
+              <button onClick={submitResolution} className="btn-primary w-full !py-4 !rounded-2xl shadow-xl shadow-emerald-500/20 active:scale-95 transition-all">
+                Confirm Resolution ✓
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Target Inspection Modal */}
       {selectedTarget && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedTarget(null)} />
-          <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl p-6 border-t" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)', maxHeight: '80vh', overflowY: 'auto' }}>
+          <div className="relative w-full max-w-lg animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex items-start justify-between mb-5">
               <div>
                 <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>{selectedTarget.name}</h2>

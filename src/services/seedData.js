@@ -34,8 +34,8 @@ export async function initializeSeedData() {
 
     // Seed Walk-in Customer Profile
     try {
-      const { data: walkin } = await db.from('customers').select('*').eq('customer_id', CUST_WALKIN.customer_id).maybeSingle();
-      if (!walkin) {
+      const customers = await db.query('customers', 'customer_id', 'eq', CUST_WALKIN.customer_id);
+      if (!customers || customers.length === 0) {
         await db.insert('customers', CUST_WALKIN);
         console.log('✅ Seed data: CUST-WALKIN profile created');
       }

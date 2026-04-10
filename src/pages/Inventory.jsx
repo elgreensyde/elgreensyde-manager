@@ -385,9 +385,9 @@ function Inventory() {
 
       {/* ======= PRODUCT FORM MODAL ======= */}
       {showProductForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowProductForm(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-themed-heading">{editingProduct ? 'Edit SKU' : 'Add Sellable Product'}</h2>
               <button onClick={() => setShowProductForm(false)} className="text-themed-muted hover:text-themed-heading"><X size={20} /></button>
@@ -428,9 +428,9 @@ function Inventory() {
 
       {/* ======= CONSUMABLE FORM MODAL ======= */}
       {showInputForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowInputForm(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[85vh] overflow-y-auto" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-themed-heading">{editingInputId ? 'Edit Consumable' : 'Add Farm Consumable'}</h2>
               <button onClick={() => { setShowInputForm(false); resetInputForm(); }} className="text-themed-muted hover:text-themed-heading"><X size={20} /></button>

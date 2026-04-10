@@ -620,9 +620,9 @@ function POS() {
 
       {/* CUSTOMER CREATION MODAL */}
       {showCustomerModal && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={() => setShowCustomerModal(false)} />
-          <form onSubmit={handleAddCustomer} className="relative w-full max-w-sm animate-slide-up bg-white rounded-3xl shadow-2xl p-6 border border-gray-100">
+          <form onSubmit={handleAddCustomer} className="relative w-full max-w-sm animate-slide-up bg-white rounded-3xl shadow-2xl p-6 border border-gray-100 max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-display font-bold text-gray-800 flex items-center gap-2"><UserPlus size={22} className="text-indigo-500" /> New Customer</h3>
               <button type="button" onClick={() => setShowCustomerModal(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={18}/></button>
@@ -677,9 +677,9 @@ function POS() {
 
       {/* WEIGHT SELECTION MODAL */}
       {weightItem && (
-        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 pb-0">
+        <div className="fixed inset-0 z-[70] flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" onClick={() => setWeightItem(null)} />
-          <div className="relative w-full max-w-sm animate-slide-up bg-white sm:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden">
+          <div className="relative w-full max-w-sm animate-slide-up bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
             <div className="bg-emerald-50 p-6 border-b border-emerald-100 flex justify-between items-start pattern-dots pattern-emerald-500 pattern-opacity-10 pattern-size-4">
                <div>
                  <div className="flex items-center gap-2 mb-1">
@@ -731,9 +731,9 @@ function POS() {
 
       {/* SET PRICE MODAL */}
       {editPriceSku && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setEditPriceSku(null)} />
-          <div className="relative w-full max-w-xs animate-slide-up rounded-3xl p-6 bg-white border border-gray-200 shadow-2xl">
+          <div className="relative w-full max-w-xs animate-slide-up rounded-3xl p-6 bg-white border border-gray-200 shadow-2xl max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-display font-bold text-gray-800">Set Retail Price</h3>
               <button onClick={() => setEditPriceSku(null)} className="p-1.5 bg-gray-100 rounded-full text-gray-500"><X size={16}/></button>
@@ -754,9 +754,9 @@ function POS() {
 
       {/* RECEIPT PREVIEW MODAL */}
       {showReceiptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowReceiptModal(false)} />
-          <div className="relative w-full max-w-sm animate-slide-up bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="relative w-full max-w-sm animate-slide-up bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] mt-[5vh] sm:mt-0">
             <div className="p-4 flex justify-between items-center border-b border-gray-100 bg-gray-50 shrink-0">
                <h3 className="font-bold text-gray-700">Receipt Viewer</h3>
                <button onClick={() => setShowReceiptModal(false)} className="text-gray-400 hover:text-gray-900"><X size={20}/></button>
@@ -824,9 +824,9 @@ function POS() {
 
       {/* SALES HISTORY MODAL */}
       {showHistoryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={() => setShowHistoryModal(false)} />
-          <div className="relative w-full max-w-2xl animate-slide-up rounded-3xl overflow-hidden flex flex-col bg-white shadow-2xl max-h-[85vh]">
+          <div className="relative w-full max-w-2xl animate-slide-up rounded-3xl overflow-hidden flex flex-col bg-white shadow-2xl max-h-[90vh] mt-[5vh] sm:mt-0">
             <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h2 className="text-xl font-display font-bold text-gray-800">POS Sales History</h2>
               <button onClick={() => setShowHistoryModal(false)} className="p-2 bg-white rounded-full text-gray-500 hover:bg-gray-100 transition-colors shadow-sm"><X size={20}/></button>

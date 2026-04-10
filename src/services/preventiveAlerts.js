@@ -32,14 +32,14 @@ export async function generatePreventiveAlerts() {
 
         const daysSinceLast = lastLog?.[0]
           ? Math.floor((new Date(today) - new Date(lastLog[0].event_date)) / 86400000)
-          : 999;
+          : null;
 
-        // Condition: Rain > Threshold AND Days > Interval
-        if (recentRain >= thresholds.rain_trigger && daysSinceLast >= thresholds.spray_interval) {
+        // Condition: Rain > Threshold AND (Days > Interval OR First Time)
+        if (recentRain >= thresholds.rain_trigger && (daysSinceLast === null || daysSinceLast >= thresholds.spray_interval)) {
           alerts.push({
             alert_type: 'preventive_condition_met',
             target_type: 'general',
-            message: `${crop.common_name}: Condition met for ${remedy} — Rain (${recentRain}mm) & ${daysSinceLast} days since last application.`,
+            message: `${crop.common_name}: Condition met for ${remedy} on All Beds — Rain (${recentRain}mm) & ${daysSinceLast === null ? 'Awaiting first application' : daysSinceLast + ' days since last treatment'}`,
             priority: 'Medium'
           });
         }
@@ -58,9 +58,15 @@ export async function generatePreventiveAlerts() {
         .limit(1);
       const daysSinceUrea = lastUrea?.[0]
         ? Math.floor((new Date(today) - new Date(lastUrea[0].event_date)) / 86400000)
-        : 999;
-      if (daysSinceUrea >= 7) {
-        alerts.push({ alert_type: 'fertilizer_due', target_type: 'plot', target_id: plot.plot_id, message: `Weekly fertilizer due on ${plot.plot_code} — ${daysSinceUrea} days since last urea`, priority: 'Medium' });
+        : null;
+      if (daysSinceUrea === null || daysSinceUrea >= 7) {
+        alerts.push({ 
+          alert_type: 'fertilizer_due', 
+          target_type: 'plot', 
+          target_id: plot.plot_id, 
+          message: `Weekly fertilizer due on ${plot.plot_code} — ${daysSinceUrea === null ? 'Initial feeding required' : daysSinceUrea + ' days since last urea'}`, 
+          priority: 'Medium' 
+        });
       }
     }
 

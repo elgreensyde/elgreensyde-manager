@@ -223,9 +223,9 @@ function Customers() {
 
       {/* ADD/EDIT MODAL */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowForm(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-bold text-themed-heading">{editingId ? 'Edit Customer' : 'New Customer'}</h2>
               <button onClick={() => setShowForm(false)} className="text-themed-muted hover:text-themed-heading"><X size={20} /></button>

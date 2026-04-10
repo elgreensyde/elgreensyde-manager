@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Calendar, MapPin, Sprout as SproutIcon, Scissors, LayoutDashboard, X, Edit3, Trash2, PackageCheck, Layers, ArrowRight, Clock } from 'lucide-react';
+import { Plus, Search, Calendar, MapPin, Sprout as SproutIcon, Scissors, LayoutDashboard, X, Edit3, Trash2, PackageCheck, Layers, ArrowRight, Clock, Maximize2, LayoutGrid } from 'lucide-react';
 
 import toast from 'react-hot-toast';
 import db from '../services/db';
@@ -40,6 +40,7 @@ function Batches() {
   const [safetyAssessment, setSafetyAssessment] = useState(null);
   const [isCheckingSafety, setIsCheckingSafety] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showVisualizer, setShowVisualizer] = useState(false);
   
   const [activePlotForHarvest, setActivePlotForHarvest] = useState(null);
   const [activeTrayForTransplant, setActiveTrayForTransplant] = useState(null);
@@ -87,20 +88,22 @@ function Batches() {
 
   const getCrop = (id) => crops.find(c => c.id === id);
 
-  const generateCode = (prefix, cropId, setter, formState) => {
-    let cropPart = 'UNKN';
-    if (cropId) {
-      const crop = getCrop(cropId);
-      if (crop) {
-        cropPart = crop.common_name.substring(0,3).toUpperCase();
-      }
+  const generateCode = async (prefix, cropId, setter, formState) => {
+    try {
+      const newCode = await db.generateSequentialCode(prefix === 'tray' ? 'trays' : 'batches', cropId);
+      setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: newCode });
+    } catch (err) {
+      console.error('Failed to generate code:', err);
     }
-    // Increased randomness for unique constraint safety
-    const suffix = `${Math.floor(Math.random() * 900000) + 100000}`;
-    setter({ ...formState, crop_id: cropId, [`${prefix}_code`]: `${prefix.toUpperCase()}-${cropPart}-${suffix}` });
   };
 
-  const generateRandomBedCode = () => `BED-${Math.floor(Math.random() * 9000) + 1000}`;
+  const generateBedCoordinate = () => {
+    // Generate simple A1, A2... B1, B2 coordinate suggestions
+    const totalPlots = plots.length;
+    const row = String.fromCharCode(65 + Math.floor(totalPlots / 10)); // A, B, C...
+    const col = (totalPlots % 10) + 1;
+    return `BED-${row}${col}`;
+  };
 
   const parseDateInternal = (dateStr) => {
     if (!dateStr) return new Date();
@@ -129,9 +132,9 @@ function Batches() {
     return date.toISOString().split('T')[0];
   };
 
-  const handleTrayCropChange = (cropId) => {
+  const handleTrayCropChange = async (cropId) => {
     const targetDate = calculateTargetDate(cropId, trayForm.sowing_date);
-    generateCode('tray', cropId, setTrayForm, { ...trayForm, crop_id: cropId, target_transplant_date: targetDate });
+    await generateCode('tray', cropId, setTrayForm, { ...trayForm, crop_id: cropId, target_transplant_date: targetDate });
   };
 
   const handleTrayDateChange = (dateStr) => {
@@ -188,8 +191,8 @@ function Batches() {
     } catch (err) {
       console.error('Tray Creation Error:', err);
       if(err.message.includes("tray_code_key")) {
-        toast.error("Tray Code already exists! Regenerating...");
-        generateCode('tray', trayForm.crop_id, setTrayForm, trayForm);
+        toast.error("Tray Code collision! Regenerating sequential ID...");
+        await generateCode('tray', trayForm.crop_id, setTrayForm, trayForm);
       } else {
         toast.error(`Error: ${err.message || 'Operation failed'}`);
       }
@@ -209,7 +212,7 @@ function Batches() {
   const deleteTray = async (id) => {
     if(await confirmAction('Delete this tray tracking record? (Warning: Scheduled tasks will also be deleted)', { confirmText: 'Yes, Delete' })) {
       try {
-        await lifecycleScheduler.cleanupTasks(id, 'tray');
+        await lifecycleScheduler.cleanupTasks(id, 'tray', { includeAllStatuses: true });
         await db.delete('trays', id);
         toast.success('Tray and linked tasks deleted.');
         load();
@@ -328,8 +331,8 @@ function Batches() {
       if (!editingBatchId) {
         const { data: existing } = await supabase.from('batches').select('batch_id').eq('batch_code', batchForm.batch_code).maybeSingle();
         if (existing) {
-          toast.error("Batch Code already exists! Regenerating...");
-          generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
+          toast.error("Batch Code collision! Regenerating sequential ID...");
+          await generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
           return;
         }
       }
@@ -363,8 +366,8 @@ function Batches() {
     } catch (err) {
       console.error('Batch error:', err);
       if(err.message.includes("batches_batch_code_key")) {
-        toast.error("Batch Code already exists! Please use a unique code.");
-        generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
+        toast.error("Batch Code collision! Regenerating...");
+        await generateCode('batch', batchForm.crop_id, setBatchForm, batchForm);
       } else {
         toast.error(`Error: ${err.message || 'Operation failed'}`);
       }
@@ -639,13 +642,27 @@ function Batches() {
 
           {/* PLOT MONITOR (Pipeline A) */}
           <div className={`space-y-4 ${activeTab === 'plots' ? 'block animate-fade-in' : 'hidden'}`}>
-             <div className="mb-4 mt-2">
-                 <BedVisualizer />
+             
+             {/* FEAT-009: Interactive Matrix Visualizer Trigger */}
+             <div className="glass-card p-6 border-2 border-dashed border-emerald-500/20 rounded-3xl bg-emerald-500/5 mb-6 flex flex-col items-center text-center gap-4">
+                <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-emerald-500/20 animate-pulse">
+                   <LayoutGrid size={32} />
+                </div>
+                <div>
+                   <h3 className="text-lg font-display font-bold text-themed-heading uppercase tracking-tight">Bed Matrix Planner</h3>
+                   <p className="text-xs text-themed-muted max-w-xs mx-auto">Optimize your bed layout using the Bukidnon Push-Pull IPM strategy before transplanting.</p>
+                </div>
+                <button 
+                  onClick={() => setShowVisualizer(true)}
+                  className="btn-primary !py-3 !px-8 !rounded-2xl flex items-center gap-2 shadow-lg hover:translate-y-[-2px] transition-transform"
+                >
+                   <Maximize2 size={18} /> Plan New Layout
+                </button>
              </div>
 
             <div className="flex flex-wrap items-center justify-between mb-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-green-600 flex items-center gap-2"><LayoutDashboard size={16} /> Plot Monitor <span className="text-xs font-normal text-gray-500 ml-2 hidden sm:inline">(Basil & Parsley, Cut-and-come-again)</span></h2>
-              <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={() => {setEditingPlotId(null); setPlotForm({...defaultPlotForm, plot_code: generateRandomBedCode()}); setShowPlotModal(true);}}><Plus size={14}/> Add Plot</button>
+              <button className="btn-primary !py-1.5 !px-3 !text-xs" onClick={() => {setEditingPlotId(null); setPlotForm({...defaultPlotForm, plot_code: generateBedCoordinate()}); setShowPlotModal(true);}}><Plus size={14}/> Add Plot</button>
             </div>
             
             {filteredPlots.length === 0 ? (
@@ -856,9 +873,9 @@ function Batches() {
 
       {/* TRAY MODAL */}
       {showTrayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowTrayModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><Layers size={18}/> {editingTrayId ? 'Edit Tray' : 'New Propagation Tray'}</h2>
               <button onClick={() => setShowTrayModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
@@ -912,9 +929,9 @@ function Batches() {
 
       {/* TRANSPLANT MODAL */}
       {showTransplantModal && activeTrayForTransplant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowTransplantModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border border-blue-500/30 bg-gray-900 shadow-2xl shadow-blue-500/10">
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border border-blue-500/30 bg-gray-900 shadow-2xl shadow-blue-500/10 max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <ArrowRight size={18} className="text-blue-400"/> Transplant & Assign
@@ -974,9 +991,9 @@ function Batches() {
 
       {/* PLOT MODAL */}
       {showPlotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPlotModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><LayoutDashboard size={18}/> {editingPlotId ? 'Edit Plot' : 'New Plot/Bed Definition'}</h2>
               <button onClick={() => setShowPlotModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
@@ -986,7 +1003,7 @@ function Batches() {
               <div>
                 <div className="flex justify-between items-end mb-1">
                   <label className="text-xs text-themed-muted">Plot UID *</label>
-                  <button type="button" onClick={() => setPlotForm({...plotForm, plot_code: generateRandomBedCode()})} className="text-[10px] text-green-500 hover:text-green-400 font-bold">Auto Generate</button>
+                  <button type="button" onClick={() => setPlotForm({...plotForm, plot_code: generateBedCoordinate()})} className="text-[10px] text-green-500 hover:text-green-400 font-bold">Auto Generate</button>
                 </div>
                 <input type="text" required value={plotForm.plot_code} onChange={e => setPlotForm({...plotForm, plot_code: e.target.value})} className="input-field w-full" placeholder="e.g. BED-FRONT-01 or PLT-BSL-01" />
               </div>
@@ -1035,9 +1052,9 @@ function Batches() {
 
       {/* BATCH MODAL */}
       {showBatchModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowBatchModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><SproutIcon size={18}/> {editingBatchId ? 'Edit Batch track' : 'New Batch (Pot/Kratky) Track'}</h2>
               <button onClick={() => setShowBatchModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
@@ -1098,9 +1115,9 @@ function Batches() {
 
       {/* HARVEST SAFETY MODAL */}
       {showSafetyModal && safetyAssessment && activePlotForHarvest && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowSafetyModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border shadow-2xl" style={{ 
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border shadow-2xl max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ 
             background: 'var(--color-bg-modal)', 
             borderColor: safetyAssessment.status === 'Blocked' ? '#e74c3c' : '#f39c12' 
           }}>
@@ -1166,9 +1183,9 @@ function Batches() {
 
       {/* HARVEST MODAL */}
       {showHarvestModal && activePlotForHarvest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowHarvestModal(false)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2">
                 <Scissors size={18}/> Log Harvest 
@@ -1229,6 +1246,8 @@ function Batches() {
           </div>
         </div>
       )}
+      {/* Bed Matrix Visualizer Modal (FEAT-009) */}
+      <BedVisualizer isOpen={showVisualizer} onClose={() => setShowVisualizer(false)} />
     </div>
   );
 }

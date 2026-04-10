@@ -132,16 +132,7 @@ export const db = {
     return data || [];
   },
 
-  // Generate batch code
-  async generateBatchCode() {
-    const year = new Date().getFullYear();
-    const { data } = await supabase
-      .from('batches')
-      .select('batch_code')
-      .like('batch_code', `B-${year}-%`);
-    const num = ((data?.length || 0) + 1).toString().padStart(3, '0');
-    return `B-${year}-${num}`;
-  },
+
 
   // QUERY JSONB contains (for target_ids array)
   async queryContains(table, column, id) {
@@ -176,6 +167,40 @@ export const db = {
       throw new Error(error.message);
     }
     return data;
+  },
+
+  // GENERATE HUMAN-READABLE SEQUENTIAL IDS (YYMMDD-CROP-SEQ)
+  async generateSequentialCode(table, cropId) {
+    const today = new Date();
+    const yy = today.getFullYear().toString().slice(-2);
+    const mm = (today.getMonth() + 1).toString().padStart(2, '0');
+    const dd = today.getDate().toString().padStart(2, '0');
+    const prefix = `${yy}${mm}${dd}`;
+
+    // Get crop short-code (first 3 chars)
+    let cropPart = 'ITM';
+    if (cropId) {
+       const crop = await this.getById('crops', cropId);
+       if (crop && crop.common_name) {
+          cropPart = crop.common_name.substring(0, 3).toUpperCase();
+       }
+    }
+
+    // Count today's entries for this prefix in this table
+    const todayStart = new Date().toISOString().split('T')[0];
+    let query = supabase
+      .from(table)
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', todayStart);
+    
+    if (cropId) {
+      query = query.eq('crop_id', cropId);
+    }
+
+    const { count } = await query;
+
+    const seq = ( (count || 0) + 1).toString().padStart(2, '0');
+    return `${prefix}-${cropPart}-${seq}`;
   },
 };
 

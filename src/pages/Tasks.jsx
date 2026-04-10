@@ -263,9 +263,9 @@ function Tasks() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6" onClick={() => setShowForm(false)}>
           <div className="absolute inset-0 backdrop-blur-sm" style={{ background: 'var(--color-bg-overlay)' }} />
-          <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl sm:rounded-3xl" style={{ background: 'var(--color-bg-modal)', border: '1px solid var(--color-border)' }} onClick={e => e.stopPropagation()}>
+          <div className="relative w-full max-w-lg animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }} onClick={e => e.stopPropagation()}>
             <div className="px-6 pt-6 pb-4 flex items-center justify-between">
               <h2 className="text-lg font-display font-bold" style={{ color: 'var(--color-text-heading)' }}>Add Manual Task</h2>
               <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:opacity-70"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
@@ -286,9 +286,9 @@ function Tasks() {
 
       {/* LOG EXECUTION MODAL */}
       {activeTaskForLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setActiveTaskForLog(null)} />
-          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+          <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2">Execute with Inputs</h2>
               <button onClick={() => setActiveTaskForLog(null)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
