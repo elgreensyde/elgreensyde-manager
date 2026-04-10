@@ -25,6 +25,7 @@ function Batches() {
   const [harvestLogs, setHarvestLogs] = useState([]);
   const [activeIssues, setActiveIssues] = useState([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState([]);
+  const [tasks, setTasks] = useState([]); // New state
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -41,6 +42,7 @@ function Batches() {
   const [isCheckingSafety, setIsCheckingSafety] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showVisualizer, setShowVisualizer] = useState(false);
+  const [modalTab, setModalTab] = useState('details'); // 'details' | 'history'
   
   const [activePlotForHarvest, setActivePlotForHarvest] = useState(null);
   const [activeTrayForTransplant, setActiveTrayForTransplant] = useState(null);
@@ -64,14 +66,15 @@ function Batches() {
   const [transplantForm, setTransplantForm] = useState(defaultTransplantForm);
 
   const load = async () => {
-    const [b, p, c, t, h, issues, mLogs] = await Promise.all([
+    const [b, p, c, t, h, issues, mLogs, tasksData] = await Promise.all([
       db.getAll('batches') || [],
       db.getAll('plots') || [],
       db.getAll('crops') || [],
       db.getAll('trays') || [],
       db.getAll('harvest_logs') || [],
       supabase.from('flagged_issues').select('*').eq('is_active_threat', true),
-      db.getAll('maintenance_logs') || []
+      db.getAll('maintenance_logs') || [],
+      db.getAll('tasks') || []
     ]);
     setBatches(b || []);
     setPlots(p || []);
@@ -80,6 +83,7 @@ function Batches() {
     setHarvestLogs(h || []);
     setActiveIssues(issues.data || []);
     setMaintenanceRecords(mLogs || []);
+    setTasks(tasksData || []); // Added state for tasks
     setLoading(false);
   };
 
@@ -876,12 +880,21 @@ function Batches() {
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowTrayModal(false)} />
           <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><Layers size={18}/> {editingTrayId ? 'Edit Tray' : 'New Propagation Tray'}</h2>
-              <button onClick={() => setShowTrayModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
+              <button onClick={() => { setShowTrayModal(false); setModalTab('details'); }} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
             </div>
+
+            {/* TAB TOGGLE (FEAT-019) */}
+            {editingTrayId && (
+              <div className="flex gap-2 mb-6 border-b border-white/5 pb-2">
+                <button onClick={() => setModalTab('details')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='details' ? 'bg-indigo-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>Details</button>
+                <button onClick={() => setModalTab('history')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='history' ? 'bg-indigo-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>History Ledger</button>
+              </div>
+            )}
             
-            <form onSubmit={handleCreateTray} className="space-y-4">
+            {modalTab === 'details' ? (
+              <form onSubmit={handleCreateTray} className="space-y-4">
               <div>
                 <label className="text-xs text-themed-muted block mb-1">Crop Variety *</label>
                 <select required value={trayForm.crop_id} onChange={e => handleTrayCropChange(e.target.value)} className="input-field w-full">
@@ -921,8 +934,18 @@ function Batches() {
                 </div>
               </div>
               
-              <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center bg-indigo-600 hover:bg-indigo-700">{editingTrayId ? 'Update Tray' : 'Start Tray'}</button>
-            </form>
+                <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center bg-indigo-600 hover:bg-indigo-700">{editingTrayId ? 'Update Tray' : 'Start Tray'}</button>
+              </form>
+            ) : (
+              <div className="space-y-4 animate-fade-in-down">
+                 <HistoryLedger 
+                    entityId={editingTrayId} 
+                    entityType="tray"
+                    logs={maintenanceRecords}
+                    tasks={tasks}
+                 />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -994,12 +1017,21 @@ function Batches() {
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPlotModal(false)} />
           <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><LayoutDashboard size={18}/> {editingPlotId ? 'Edit Plot' : 'New Plot/Bed Definition'}</h2>
-              <button onClick={() => setShowPlotModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
+              <button onClick={() => { setShowPlotModal(false); setModalTab('details'); }} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
             </div>
+
+            {/* TAB TOGGLE (FEAT-019) */}
+            {editingPlotId && (
+              <div className="flex gap-2 mb-6 border-b border-white/5 pb-2">
+                <button onClick={() => setModalTab('details')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='details' ? 'bg-green-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>Details</button>
+                <button onClick={() => setModalTab('history')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='history' ? 'bg-green-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>History Ledger</button>
+              </div>
+            )}
             
-            <form onSubmit={handleCreatePlot} className="space-y-4">
+            {modalTab === 'details' ? (
+              <form onSubmit={handleCreatePlot} className="space-y-4">
               <div>
                 <div className="flex justify-between items-end mb-1">
                   <label className="text-xs text-themed-muted">Plot UID *</label>
@@ -1044,8 +1076,18 @@ function Batches() {
                  </div>
               )}
               
-              <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center border-green-500/50">{editingPlotId ? 'Update Plot' : 'Save Plot Record'}</button>
-            </form>
+                <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center border-green-500/50">{editingPlotId ? 'Update Plot' : 'Save Plot Record'}</button>
+              </form>
+            ) : (
+                <div className="space-y-4 animate-fade-in-down">
+                    <HistoryLedger 
+                        entityId={editingPlotId} 
+                        entityType="plot"
+                        logs={maintenanceRecords}
+                        tasks={tasks}
+                    />
+                </div>
+            )}
           </div>
         </div>
       )}
@@ -1055,12 +1097,21 @@ function Batches() {
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowBatchModal(false)} />
           <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2"><SproutIcon size={18}/> {editingBatchId ? 'Edit Batch track' : 'New Batch (Pot/Kratky) Track'}</h2>
-              <button onClick={() => setShowBatchModal(false)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
+              <button onClick={() => { setShowBatchModal(false); setModalTab('details'); }} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
             </div>
+
+            {/* TAB TOGGLE (FEAT-019) */}
+            {editingBatchId && (
+              <div className="flex gap-2 mb-6 border-b border-white/5 pb-2">
+                <button onClick={() => setModalTab('details')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='details' ? 'bg-amber-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>Details</button>
+                <button onClick={() => setModalTab('history')} className={`text-xs font-bold px-4 py-1.5 rounded-lg transition-colors ${modalTab==='history' ? 'bg-amber-500 text-white' : 'text-themed-muted hover:bg-white/5'}`}>History Ledger</button>
+              </div>
+            )}
             
-            <form onSubmit={handleCreateBatch} className="space-y-4">
+            {modalTab === 'details' ? (
+              <form onSubmit={handleCreateBatch} className="space-y-4">
               <div>
                 <label className="text-xs text-themed-muted block mb-1">Crop Variant (Pot) *</label>
                 <select required value={batchForm.crop_id} onChange={e => generateCode('batch', e.target.value, setBatchForm, batchForm)} className="input-field w-full">
@@ -1107,8 +1158,18 @@ function Batches() {
                  </div>
               )}
               
-              <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center bg-amber-600 hover:bg-amber-700">{editingBatchId ? 'Update Batch' : 'Initialize Batch'}</button>
-            </form>
+                <button type="submit" className="btn-primary w-full py-3 mt-2 justify-center bg-amber-600 hover:bg-amber-700">{editingBatchId ? 'Update Batch' : 'Initialize Batch'}</button>
+              </form>
+            ) : (
+                <div className="space-y-4 animate-fade-in-down">
+                    <HistoryLedger 
+                        entityId={editingBatchId} 
+                        entityType="batch"
+                        logs={maintenanceRecords}
+                        tasks={tasks}
+                    />
+                </div>
+            )}
           </div>
         </div>
       )}
@@ -1248,6 +1309,57 @@ function Batches() {
       )}
       {/* Bed Matrix Visualizer Modal (FEAT-009) */}
       <BedVisualizer isOpen={showVisualizer} onClose={() => setShowVisualizer(false)} />
+    </div>
+  );
+}
+
+/**
+ * FEAT-019: Historical Ledger Component
+ */
+function HistoryLedger({ entityId, entityType, logs, tasks }) {
+  const filteredLogs = logs.filter(l => 
+    l[`${entityType}_id`] === entityId || 
+    (l.target_ids && l.target_ids.includes(entityId))
+  );
+
+  const filteredTasks = tasks.filter(t => 
+    t[`${entityType}_id`] === entityId && (t.status === 'Completed' || t.status === 'Missed')
+  );
+
+  // Combine and sort chronologically (newest first)
+  const timeline = [
+    ...filteredLogs.map(l => ({ 
+      date: l.event_date, 
+      title: `${l.action_category}: ${l.method_product}`, 
+      notes: l.notes, 
+      type: 'log',
+      id: l.log_id || l.id 
+    })),
+    ...filteredTasks.map(t => ({ 
+      date: t.completed_at?.split('T')[0] || t.due_date, 
+      title: t.status === 'Missed' ? `Missed: ${t.title}` : `Done: ${t.title}`, 
+      notes: t.status === 'Missed' ? 'Automated system flag for missed critical task.' : '', 
+      type: 'task',
+      id: t.task_id || t.id,
+      status: t.status
+    }))
+  ].sort((a,b) => b.date.localeCompare(a.date));
+
+  return (
+    <div className="space-y-3 pb-4">
+      {timeline.length === 0 ? (
+        <div className="text-center py-10 opacity-40">
+           <Clock size={32} className="mx-auto mb-2" />
+           <p className="text-xs">No historical records for this unit yet.</p>
+        </div>
+      ) : timeline.map((item, idx) => (
+        <div key={`${item.type}-${item.id}`} className="relative pl-6 border-l border-white/10 pb-4 last:pb-0">
+          <div className={`absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full ${item.status === 'Missed' ? 'bg-red-500' : 'bg-green-500'}`} />
+          <p className="text-[10px] font-bold text-themed-muted uppercase tracking-widest">{item.date}</p>
+          <p className={`text-sm font-semibold ${item.status === 'Missed' ? 'text-red-400' : 'text-themed-heading'}`}>{item.title}</p>
+          {item.notes && <p className="text-xs text-themed-muted italic mt-1 leading-relaxed">"{item.notes}"</p>}
+        </div>
+      ))}
     </div>
   );
 }

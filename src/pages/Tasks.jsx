@@ -6,6 +6,7 @@ import db from '../services/db';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
 import { confirmAction } from '../services/dialogService';
 import supabase from '../lib/supabase';
+import lifecycleScheduler from '../services/lifecycleScheduler';
 
 function Tasks() {
   const navigate = useNavigate();
@@ -22,7 +23,7 @@ function Tasks() {
   const [form, setForm] = useState({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' });
 
   const loadData = async () => {
-    await db.markOverdueTasks();
+    await lifecycleScheduler.evaluateMissedTasks();
     const [t, b, c, p, h, inv, s, tr, inputsInv] = await Promise.all([
       db.getAll('tasks'), 
       db.getAll('batches'), 
@@ -79,12 +80,13 @@ function Tasks() {
   useEffect(() => { loadData(); }, []);
 
   const today = new Date().toISOString().split('T')[0];
+  const missed = useMemo(() => tasks.filter(t => t.status === 'Missed').sort((a,b) => a.due_date.localeCompare(b.due_date)), [tasks]);
   const overdue = useMemo(() => tasks.filter(t => t.status === 'Overdue').sort((a,b) => a.due_date.localeCompare(b.due_date)), [tasks]);
   const dueToday = useMemo(() => tasks.filter(t => t.due_date === today && t.status === 'Pending'), [tasks, today]);
   const upcoming = useMemo(() => tasks.filter(t => t.due_date > today && t.status === 'Pending').sort((a,b) => a.due_date.localeCompare(b.due_date)), [tasks, today]);
   const completed = useMemo(() => tasks.filter(t => t.status === 'Completed').sort((a,b) => (b.completed_at||'').localeCompare(a.completed_at||'')), [tasks]);
 
-  const displayTasks = filterStatus === 'Overdue' ? overdue : filterStatus === 'Today' ? dueToday : filterStatus === 'Upcoming' ? upcoming : filterStatus === 'Completed' ? completed : [...overdue, ...dueToday, ...upcoming];
+  const displayTasks = filterStatus === 'Overdue' ? [...missed, ...overdue] : filterStatus === 'Today' ? dueToday : filterStatus === 'Upcoming' ? upcoming : filterStatus === 'Completed' ? completed : [...missed, ...overdue, ...dueToday, ...upcoming];
 
   const completeTask = async (taskId) => { 
     try {
@@ -181,7 +183,36 @@ function Tasks() {
   const getPlotLabel = (plotId) => { if (!plotId) return null; const plot = plots.find(p => p.id === plotId || p.plot_id === plotId); return plot ? plot.plot_code : null; };
 
   const priorityColors = { Critical: 'text-red-500 bg-red-500/10', High: 'text-amber-500 bg-amber-500/10', Medium: 'bg-blue-500/10 text-blue-500', Normal: 'bg-green-500/10 text-green-600', Low: 'bg-gray-500/10 text-gray-500' };
-  const statusConfigs = { Overdue: { icon: AlertTriangle, color: 'text-red-500', border: 'border-l-red-500/70' }, Pending: { icon: Clock, color: 'text-amber-500', border: 'border-l-amber-500/50' }, Completed: { icon: CheckCircle2, color: 'text-green-500', border: 'border-l-green-500/30' } };
+  const statusConfigs = { 
+    Missed: { icon: AlertTriangle, color: 'text-red-600', border: 'border-l-red-600' },
+    Overdue: { icon: AlertTriangle, color: 'text-red-500', border: 'border-l-red-500/70' }, 
+    Pending: { icon: Clock, color: 'text-amber-500', border: 'border-l-amber-500/50' }, 
+    Completed: { icon: CheckCircle2, color: 'text-green-500', border: 'border-l-green-500/30' } 
+  };
+
+  const handleOpenLog = (task) => {
+     setActiveTaskForLog(task);
+     
+     // SMART DEFAULTS for FEAT-018
+     let defaultInputId = '';
+     let defaultAmount = '';
+     
+     if (task.category === 'Fertilize' || task.title.toLowerCase().includes('urea')) {
+        const product = inputs.find(i => i.product_name.toLowerCase().includes('urea') || i.product_name.toLowerCase().includes('14-14-14'));
+        if (product) defaultInputId = product.input_id;
+        defaultAmount = '5'; // Standard basal/side-dress
+     } else if (task.category === 'Pest Treatment' || task.title.toLowerCase().includes('spray')) {
+        const product = inputs.find(i => i.product_name.toLowerCase().includes('neem') || i.product_name.toLowerCase().includes('bicarb'));
+        if (product) defaultInputId = product.input_id;
+        defaultAmount = '5';
+     }
+
+     setLogForm({ 
+       input_id: defaultInputId, 
+       amount: defaultAmount, 
+       unit: inputs.find(i => i.input_id === defaultInputId)?.stock_unit || '' 
+     });
+  };
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="loading-spinner mx-auto" /></div>;
 
@@ -250,7 +281,7 @@ function Tasks() {
                           Go <ArrowRight size={10} />
                         </button>
                       )}
-                      <button onClick={() => { setActiveTaskForLog(task); setLogForm({ input_id: '', amount: '', unit: '' }); }} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                      <button onClick={() => handleOpenLog(task)} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                         Log Execution <ArrowRight size={10} />
                       </button>
                       <StatusIcon size={16} className={`${config.color} flex-shrink-0`} />
@@ -300,29 +331,40 @@ function Tasks() {
                 <p className="font-semibold text-sm text-themed-heading">{activeTaskForLog.title}</p>
               </div>
 
-              <div>
-                <label className="text-xs text-themed-muted block mb-1">Select Input (Fertilizer/Pesticide) *</label>
-                <select required value={logForm.input_id} onChange={e => setLogForm({...logForm, input_id: e.target.value})} className="input-field w-full">
-                  <option value="">Select Consumable...</option>
-                  {inputs.map(i => (
-                    <option key={i.input_id} value={i.input_id}>
-                      {i.product_name} ({i.current_stock} {i.stock_unit} available)
-                    </option>
-                  ))}
-                </select>
-                {inputs.length === 0 && <p className="text-[10px] text-amber-500 mt-1">No consumables found in inventory.</p>}
-              </div>
+              {!activeTaskForLog.title.toLowerCase().includes('watering') && (
+                <div>
+                  <label className="text-xs text-themed-muted block mb-1">Select Input (Fertilizer/Pesticide) *</label>
+                  <select required value={logForm.input_id} onChange={e => setLogForm({...logForm, input_id: e.target.value})} className="input-field w-full">
+                    <option value="">Select Consumable...</option>
+                    {inputs.map(i => (
+                      <option key={i.input_id} value={i.input_id}>
+                        {i.product_name} ({i.current_stock} {i.stock_unit} available)
+                      </option>
+                    ))}
+                  </select>
+                  {inputs.length === 0 && <p className="text-[10px] text-amber-500 mt-1">No consumables found in inventory.</p>}
+                </div>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-themed-muted block mb-1">Amount Used *</label>
-                  <input type="number" required step="0.01" value={logForm.amount} onChange={e => setLogForm({...logForm, amount: e.target.value})} className="input-field w-full" placeholder="e.g. 50" />
+              {!activeTaskForLog.title.toLowerCase().includes('watering') ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-themed-muted block mb-1">Amount Used *</label>
+                    <input type="number" required step="0.01" value={logForm.amount} onChange={e => setLogForm({...logForm, amount: e.target.value})} className="input-field w-full" placeholder="e.g. 50" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-themed-muted block mb-1">Unit</label>
+                    <input type="text" readOnly value={inputs.find(i => i.input_id === logForm.input_id)?.stock_unit || '--'} className="input-field w-full bg-black/10 opacity-60" />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs text-themed-muted block mb-1">Unit</label>
-                  <input type="text" readOnly value={inputs.find(i => i.input_id === logForm.input_id)?.stock_unit || '--'} className="input-field w-full bg-black/10 opacity-60" />
-                </div>
-              </div>
+              ) : (
+                 <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
+                        <CheckCircle2 size={24} />
+                    </div>
+                    <p className="text-sm font-bold text-blue-400">Confirm entire zone watered correctly.</p>
+                 </div>
+              )}
 
               <div className="text-[10px] text-themed-muted mt-4">
                 This will deduct from <span className="text-amber-500">Inputs Inventory</span> and create a <span className="text-blue-500">Maintenance Log</span> entry linked to this target.

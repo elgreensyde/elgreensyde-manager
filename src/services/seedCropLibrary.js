@@ -229,7 +229,7 @@ const CROPS = [
       { name: 'Vegetative', days: '15-40', risk: 'Aphids, leafminers, downy mildew' },
       { name: 'Reproductive - Prevent', days: '40+', risk: 'Pinch flowers immediately' }
     ],
-    days_to_maturity: 50, rooting_or_germ_days: 7, avg_nursery_days: 14,
+    days_to_maturity: 50, rooting_or_germ_days: 14, avg_nursery_days: 14,
     days_to_first_harvest: 35, harvest_interval_days: 7, plot_lifespan_days: 80, resting_days: 14,
     harvest_window_days: 10, spacing_cm: '25x30cm', plants_per_sqm: 13, min_bed_depth_cm: 25, mound_height_cm: 30,
     pot_diameter_cm: 20, pot_depth_cm: null, pot_material: null,

@@ -13,6 +13,7 @@ import db from '../services/db';
 import { getBatchStage } from '../services/taskEngine';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
 import { generatePreventiveAlerts } from '../services/preventiveAlerts';
+import lifecycleScheduler from '../services/lifecycleScheduler';
 
 function Dashboard() {
   const [tasks, setTasks] = useState([]);
@@ -30,7 +31,7 @@ function Dashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      await db.markOverdueTasks();
+      await lifecycleScheduler.evaluateMissedTasks();
       await generatePreventiveAlerts();
       const { default: weatherService } = await import('../services/weatherService');
       
@@ -104,7 +105,7 @@ function Dashboard() {
   const today = new Date().toISOString().split('T')[0];
   const activeAway = useMemo(() => awayPeriods.find(p => p.start_date <= today && p.end_date >= today && p.is_active), [awayPeriods, today]);
   
-  const overdueTasks = useMemo(() => tasks.filter(t => t.status === 'Overdue'), [tasks]);
+  const overdueTasks = useMemo(() => tasks.filter(t => t.status === 'Overdue' || t.status === 'Missed'), [tasks]);
   const todayTasks = useMemo(() => tasks.filter(t => t.due_date === today && t.status === 'Pending'), [tasks, today]);
   const upcomingTasks = useMemo(() => {
     const d = new Date(); d.setDate(d.getDate() + 7);
@@ -277,19 +278,21 @@ function Dashboard() {
           <section className="animate-fade-in">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse-soft" />
-              <h2 className="text-sm font-bold text-red-500 uppercase tracking-wider">Overdue ({overdueTasks.length})</h2>
+              <h2 className="text-sm font-bold text-red-500 uppercase tracking-wider">Overdue & Missed ({overdueTasks.length})</h2>
             </div>
             <div className="space-y-2">
               {overdueTasks.map(task => (
-                <div key={task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3 select-none">
+                <div key={task.task_id || task.id} className="glass-card p-4 border-l-4 border-l-red-500/70 flex items-center gap-3 select-none">
                   <button 
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} 
                     className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-red-500/50 hover:bg-red-500/10 p-3 -m-3 active:scale-95 transition-all flex items-center justify-center" 
                     title="Mark as completed"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-red-500 truncate">{task.title}</p>
-                    <p className="text-xs text-red-500/60 mt-0.5">Due: {task.due_date}</p>
+                    <p className={`text-sm font-medium truncate ${task.status === 'Missed' ? 'text-red-600 font-bold' : 'text-red-500'}`}>
+                        {task.status === 'Missed' && '🔴 '}{task.title}
+                    </p>
+                    <p className="text-xs text-red-500/60 mt-0.5">Due: {task.due_date} {task.status === 'Missed' && '— MISSED'}</p>
                   </div>
                   {task.title.toLowerCase().includes('scouting') && (
                     <button onClick={() => navigate('/monitoring')} className="btn-secondary !text-[10px] !px-2 !py-1 flex items-center gap-1 bg-red-500/10 text-red-500 border-red-500/20">
@@ -317,7 +320,7 @@ function Dashboard() {
           ) : (
             <div className="space-y-2">
               {todayTasks.map(task => (
-                <div key={task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3 select-none">
+                <div key={task.task_id || task.id} className="glass-card p-4 border-l-4 border-l-amber-500/70 flex items-center gap-3 select-none">
                   <button 
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); completeTask(task.task_id || task.id); }} 
                     className="flex-shrink-0 w-8 h-8 rounded-full border-2 border-amber-500/50 hover:bg-amber-500/10 p-3 -m-3 active:scale-95 transition-all flex items-center justify-center"
@@ -368,7 +371,7 @@ function Dashboard() {
             </div>
             <div className="space-y-2">
               {upcomingTasks.slice(0, 5).map(task => (
-                <div key={task.id} className="glass-card p-4 border-l-4 border-l-blue-500/30 flex items-center gap-3">
+                <div key={task.task_id || task.id} className="glass-card p-4 border-l-4 border-l-blue-500/30 flex items-center gap-3">
                   <Clock size={14} className="text-blue-500/50 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm truncate" style={{ color: 'var(--color-text-secondary)' }}>{task.title}</p>
@@ -446,9 +449,9 @@ function Dashboard() {
               </div>
               <div style={{ paddingLeft: '8px' }}>
                 {zoneTasks.map(t => {
-                  const isOverdue = t.status === 'Overdue';
+                  const isOverdue = t.status === 'Overdue' || t.status === 'Missed';
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px', fontSize: '11pt' }}>
+                    <div key={t.task_id || t.id} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '10px', fontSize: '11pt' }}>
                       <div style={{ border: `2px solid ${isOverdue ? '#ef4444' : '#6b7280'}`, width: '16px', height: '16px', borderRadius: '4px', marginRight: '12px', flexShrink: 0, marginTop: '2px' }} />
                       <div style={{ flex: 1 }}>
                         <span style={{ fontWeight: isOverdue ? 'bold' : 'normal', color: isOverdue ? '#ef4444' : '#111' }}>

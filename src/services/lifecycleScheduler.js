@@ -251,6 +251,41 @@ const lifecycleScheduler = {
        throw error;
     }
   },
+
+  /**
+   * FEAT-020: Evaluates all pending tasks and identifies "Missed" actions.
+   * Mutates status to 'Missed' and writes a system log for critical events.
+   */
+  async evaluateMissedTasks() {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: overdueTasks } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('status', 'Pending')
+      .lt('due_date', todayStr);
+
+    if (!overdueTasks || overdueTasks.length === 0) return;
+
+    for (const task of overdueTasks) {
+      const isCritical = task.category === 'Fertilize' || task.category === 'Harvest' || task.category === 'Transplant';
+      
+      // Update task status to Missed (or Overdue if not critical enough for 'Missed' label transition yet)
+      const newStatus = isCritical ? 'Missed' : 'Overdue';
+      await db.update('tasks', task.task_id || task.id, { status: newStatus });
+
+      // If critical, log it in maintenance history as a negative health event
+      if (isCritical) {
+        await db.insert('maintenance_logs', {
+          event_date: todayStr,
+          action_category: 'System Flag',
+          target_ids: task.plot_id ? [task.plot_id] : task.batch_id ? [task.batch_id] : task.tray_id ? [task.tray_id] : [],
+          notes: `🔴 MISSED ACTION: ${task.title} (Due ${task.due_date})`,
+          method_product: 'None — System Generated'
+        });
+      }
+    }
+    console.log(`[Lifecycle] Processed ${overdueTasks.length} missed/overdue tasks.`);
+  },
 };
 
 export default lifecycleScheduler;
