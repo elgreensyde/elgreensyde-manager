@@ -92,9 +92,9 @@ function Monitoring() {
   const getAllTargets = () => {
     const plotTargets = plots
       .filter(p => p.status === 'Active')
-      .map(p => ({ id: p.plot_id, label: `${p.plot_code} (${getCropName(p.crop_id)})`, type: 'plot' }));
+      .map(p => ({ id: p.plot_id || p.id, label: `${p.plot_code} (${getCropName(p.crop_id)})`, type: 'plot' }));
     const batchTargets = batches
-      .map(b => ({ id: b.batch_id, label: `${b.batch_code} (${getCropName(b.crop_id)})`, type: 'batch' }));
+      .map(b => ({ id: b.batch_id || b.id, label: `${b.batch_code} (${getCropName(b.crop_id)})`, type: 'batch' }));
     return [...plotTargets, ...batchTargets];
   };
 
@@ -141,15 +141,34 @@ function Monitoring() {
     setLoading(false);
   };
 
+  const getSmartRecommendation = () => {
+    if (!selectedTarget || !diagnosticCategory || !diagnosticSymptom) return null;
+    const crop = crops.find(c => c.common_name === getCropName(selectedTarget.crop_id));
+    if (!crop) return null;
+
+    let rec = null;
+    if (diagnosticCategory === 'Invertebrate Pests') {
+      rec = crop.pest_records?.find(p => diagnosticSymptom.toLowerCase().includes(p.pest.toLowerCase()) || p.pest.toLowerCase().includes(diagnosticSymptom.toLowerCase().split('/')[0]));
+    } else if (diagnosticCategory === 'Fungal/Foliar Pathogens' || diagnosticCategory === 'Soil/Root Health') {
+      rec = crop.disease_records?.find(d => diagnosticSymptom.toLowerCase().includes(d.disease.toLowerCase()) || d.disease.toLowerCase().includes(diagnosticSymptom.toLowerCase().split(' (')[0]));
+    }
+
+    if (!rec || !rec.recommended_action) return null;
+
+    const product = consumables.find(c => c.product_name === rec.recommended_action.target_product_name);
+    return { ...rec.recommended_action, product, issueName: rec.pest || rec.disease };
+  };
+
   useEffect(() => { load(); }, []);
 
   /* ---- QUICK LOG ---- */
   const toggleQuickTarget = (id) => {
+    if (!id) return;
     setQuickLogForm(prev => ({
       ...prev,
-      target_ids: prev.target_ids.includes(id)
+      target_ids: (prev.target_ids || []).includes(id)
         ? prev.target_ids.filter(t => t !== id)
-        : [...prev.target_ids, id]
+        : [...(prev.target_ids || []), id]
     }));
   };
 
@@ -162,6 +181,7 @@ function Monitoring() {
         // Atomically report issue and generate task for each target
         await Promise.all(quickLogForm.target_ids.map(targetId => {
           const target = allTargets.find(t => t.id === targetId);
+          if (!target) return Promise.resolve();
           return db.rpc('report_issue_with_task', {
             p_target_type: target.type,
             p_target_id: targetId,
@@ -176,20 +196,20 @@ function Monitoring() {
         if (!quickLogForm.input_id) return toast.error('Select the product used.');
         if (quickLogForm.target_ids.length === 0) return toast.error('Select at least one target.');
         
-        const amountPerTarget = parseFloat(quickLogForm.amount_to_deduct) || 0;
-        const totalAmount = amountPerTarget * quickLogForm.target_ids.length;
+        const amountPerTarget = parseFloat(quickLogForm.amount_to_deduct || 0);
+        const totalAmount = Number((amountPerTarget * quickLogForm.target_ids.length).toFixed(4));
 
         // Atomically log maintenance and deduct inventory
         await db.rpc('log_maintenance_with_deduction', {
-          p_action_category: quickLogType.category,
+          p_action_category: quickLogType.category || 'Maintenance',
           p_target_ids: quickLogForm.target_ids,
           p_input_id: quickLogForm.input_id,
-          p_dosage_rate: quickLogForm.dosage_rate,
-          p_notes: quickLogForm.notes,
+          p_dosage_rate: quickLogForm.dosage_rate || 'N/A',
+          p_notes: quickLogForm.notes || '',
           p_amount_to_deduct: totalAmount
         });
 
-        toast.success(`${quickLogType.label} logged! Stock reconciled.`);
+        toast.success(`${quickLogType.label} logged successfully!`);
       }
       
       setQuickLogType(null);
@@ -204,8 +224,8 @@ function Monitoring() {
       });
       load();
     } catch (err) {
-      console.error(err);
-      toast.error('Logging failed. Check database functions.');
+      console.error('Quick Log Error:', err);
+      toast.error(`Logging failed: ${err.message || 'Check database functions.'}`);
     }
   };
 
@@ -258,19 +278,30 @@ function Monitoring() {
   const handleAlertAction = (alert) => {
     const targetMatch = alert.message.match(/on ([A-Z0-9\-]+)/);
     let targetIds = [];
-    
-    if (targetMatch) {
-       const code = targetMatch[1];
-       const found = allTargets.find(t => t.label.includes(code));
-       if (found) targetIds = [found.id];
-    }
+        if (targetMatch) {
+        const code = targetMatch[1];
+        const found = allTargets.find(t => t.label.toUpperCase().includes(code.toUpperCase()));
+        if (found) targetIds = [found.id];
+     }
 
     const typeId = alert.message.toLowerCase().includes('fertilizer') || alert.message.toLowerCase().includes('urea') ? 'feed' : 'spray';
     const type = QUICK_LOG_TYPES.find(t => t.id === typeId);
     if (!type) return;
     
+    // Auto-select product if it's a common one mentioned in alert
+    let defaultInputId = '';
+    if (typeId === 'feed') {
+       const foundInput = consumables.find(c => c.product_name.toUpperCase().includes('UREA') || c.product_name.includes('14-14-14'));
+       if (foundInput) defaultInputId = foundInput.input_id;
+    }
+
     setQuickLogType(type);
-    setQuickLogForm(p => ({ ...p, target_ids: targetIds, notes: `Responding to Alert: ${alert.message}` }));
+    setQuickLogForm(p => ({ 
+      ...p, 
+      target_ids: targetIds, 
+      input_id: defaultInputId,
+      notes: `Responding to Alert: ${alert.message}` 
+    }));
   };
 
   const submitResolution = async () => {
@@ -280,11 +311,12 @@ function Monitoring() {
         status: 'Closed', 
         resolved_date: new Date().toISOString().split('T')[0],
         resolution_notes: `${resolutionData.action}: ${resolutionData.notes}`
-      }).eq('flag_id', resolvingIssue.flag_id);
+      }).or(`flag_id.eq.${resolvingIssue.flag_id || resolvingIssue.id},id.eq.${resolvingIssue.flag_id || resolvingIssue.id}`);
 
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
         action_category: 'Issue Resolution',
+        method_product: resolutionData.action, // Fixed NOT NULL constraint
         target_ids: [resolvingIssue.target_id],
         notes: `FIXED: ${resolvingIssue.issue_type} - ${resolutionData.action}. ${resolutionData.notes}`
       });
@@ -602,19 +634,21 @@ function Monitoring() {
       </div>
 
       {/* QUICK LOG MODAL */}
-      {quickLogType && (() => {
-        const QLIcon = quickLogType.icon;
-        return (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setQuickLogType(null)} />
-            <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl p-6 border-t" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${quickLogType.color}20` }}>
-                  {QLIcon && <QLIcon size={20} style={{ color: quickLogType.color }} />}
-                </div>
-                <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>Quick: {quickLogType.label}</h2>
-                <button onClick={() => setQuickLogType(null)} className="ml-auto"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
+      {quickLogType && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setQuickLogType(null)} />
+          <div className="relative w-full max-w-lg animate-slide-up rounded-t-3xl p-6 border-t" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: `${quickLogType.color}20` }}>
+                {quickLogType.icon && (() => {
+                  const Icon = quickLogType.icon;
+                  return <Icon size={20} style={{ color: quickLogType.color }} />;
+                })()}
               </div>
+              <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>Quick: {quickLogType.label}</h2>
+              <button onClick={() => setQuickLogType(null)} className="ml-auto"><X size={20} style={{ color: 'var(--color-text-muted)' }} /></button>
+            </div>
+            {/* The rest of the modal content remains same */}
 
 
             <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
@@ -719,7 +753,7 @@ function Monitoring() {
             </button>
           </div>
         </div>
-      )})}
+      )}
       {/* RESOLVE ISSUE MODAL (FEAT-007) */}
       {resolvingIssue && (
         <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-4 sm:p-6">
@@ -1085,6 +1119,68 @@ function Monitoring() {
                 <div className="text-themed-muted animate-pulse"><Sprout size={20} /></div>
                 <p className="text-[10px] text-themed-muted leading-relaxed">Selecting a specific symptom will auto-generate remediation tasks and trigger withhold-period locks on the production floor.</p>
               </div>
+
+              {/* SMART TRIAGE ENGINE (FEAT-019) */}
+              {(() => {
+                const smartRec = getSmartRecommendation();
+                if (!smartRec) return null;
+                const hasStock = smartRec.product && smartRec.product.current_stock > 0;
+                
+                return (
+                  <div className="animate-in zoom-in-95 duration-500 mt-6 overflow-hidden">
+                    <div className="bg-emerald-950/20 rounded-[2rem] border border-emerald-500/30 overflow-hidden shadow-2xl">
+                      <div className="bg-emerald-500 px-6 py-4 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Zap size={20} className="text-white animate-pulse" />
+                          <h4 className="text-sm font-black uppercase tracking-widest text-white">Smart Action Plan</h4>
+                        </div>
+                        <span className="text-[10px] bg-white/20 text-white px-3 py-1 rounded-full font-bold backdrop-blur-sm">PROMPT ENGINE ACTIVE</span>
+                      </div>
+                      
+                      <div className="p-6 space-y-5">
+                        <div className="flex items-start gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+                          <div className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/20">
+                            <Activity size={20} />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-tighter mb-1">Diagnosis Confirmed</p>
+                            <h5 className="text-base font-bold text-themed-primary">{smartRec.issueName}</h5>
+                            <p className="text-[11px] text-themed-muted leading-tight mt-1">{smartRec.notes || smartRec.application_notes}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Protocol Action</p>
+                            <p className="text-sm font-bold text-themed-primary flex items-center gap-2">
+                              <Box size={14} className="text-emerald-500" />
+                              {smartRec.product?.product_name || smartRec.target_product_name}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Inventory Check</p>
+                            <p className={`text-sm font-bold flex items-center gap-2 ${hasStock ? 'text-emerald-500' : 'text-red-500'}`}>
+                              <Droplets size={14} />
+                              {hasStock ? `${smartRec.product.current_stock} ${smartRec.product.stock_unit} Available` : 'OUT OF STOCK'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                          <div>
+                            <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Dosage Window</p>
+                            <p className="text-lg font-black text-themed-primary">{smartRec.dosage_value}{smartRec.dosage_unit}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter">Withholding Period</p>
+                            <p className="text-sm font-bold text-themed-primary">{smartRec.product?.withholding_days ?? 0} Days SAFE</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <button onClick={() => {

@@ -17,11 +17,44 @@ export async function generatePreventiveAlerts() {
     const recentRain = weatherData?.precipitation_sum?.[0] || 0; // Rain today/yesterday sum if available
 
     // 1. ABSTRACT: Process each crop for autonomous preventive alerts
+    const hourlyData = weatherCache?.data?.hourly; // Open-Meteo hourly record
+
     for (const crop of crops) {
       const thresholds = crop.weather_thresholds || {};
-      if (thresholds.rain_trigger && thresholds.spray_interval) {
-        
-        // Find last maintenance of the recommended type (e.g. K-Bicarb for Downy Mildew)
+      if (!thresholds.spray_interval) continue;
+
+      let triggerMet = false;
+      let triggerReason = '';
+
+      // A. Rain Trigger
+      if (thresholds.rain_trigger && recentRain >= thresholds.rain_trigger) {
+        triggerMet = true;
+        triggerReason = `Rain (${recentRain}mm)`;
+      }
+
+      // B. Night Humidity Soak Trigger (ARCH-BLUEPRINT)
+      if (thresholds.humidity_trigger && thresholds.night_soak_hours && hourlyData) {
+        const rhArray = hourlyData.relative_humidity_2m || [];
+        // Check last 24 hours for consecutive soak
+        let maxCongrats = 0;
+        let currentCongrats = 0;
+        for (const rh of rhArray.slice(-24)) {
+          if (rh >= thresholds.humidity_trigger) {
+            currentCongrats++;
+            maxCongrats = Math.max(maxCongrats, currentCongrats);
+          } else {
+            currentCongrats = 0;
+          }
+        }
+
+        if (maxCongrats >= thresholds.night_soak_hours) {
+          triggerMet = true;
+          triggerReason = `High Humidity Soak (${maxCongrats} hrs @ ${thresholds.humidity_trigger}%+)`;
+        }
+      }
+
+      if (triggerMet) {
+        // Find last maintenance
         const remedy = thresholds.target_remedy || 'Treatment';
         const { data: lastLog } = await supabase
           .from('maintenance_logs')
@@ -34,13 +67,13 @@ export async function generatePreventiveAlerts() {
           ? Math.floor((new Date(today) - new Date(lastLog[0].event_date)) / 86400000)
           : null;
 
-        // Condition: Rain > Threshold AND (Days > Interval OR First Time)
-        if (recentRain >= thresholds.rain_trigger && (daysSinceLast === null || daysSinceLast >= thresholds.spray_interval)) {
+        if (daysSinceLast === null || daysSinceLast >= thresholds.spray_interval) {
           alerts.push({
             alert_type: 'preventive_condition_met',
             target_type: 'general',
-            message: `${crop.common_name}: Condition met for ${remedy} on All Beds — Rain (${recentRain}mm) & ${daysSinceLast === null ? 'Awaiting first application' : daysSinceLast + ' days since last treatment'}`,
-            priority: 'Medium'
+            message: `${crop.common_name}: Condition met for ${remedy} — ${triggerReason} & ${daysSinceLast === null ? 'Awaiting first application' : daysSinceLast + ' days since last treatment'}`,
+            priority: 'Medium',
+            auto_generated: true
           });
         }
       }

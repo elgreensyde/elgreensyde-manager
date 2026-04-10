@@ -108,9 +108,9 @@ const lifecycleScheduler = {
     for (const stage of stages) {
       if (stage.name.toLowerCase() === 'nursery') continue;
       
-      const offsetDays = parseInt(stage.days);
-      if (isNaN(offsetDays)) {
-        console.warn(`lifecycleScheduler: Skipping stage "${stage.name}" due to invalid days:`, stage.days);
+      const offsetDays = stage.start_day; // Using new computable structure ARCH-002
+      if (offsetDays === undefined) {
+        console.warn(`lifecycleScheduler: Skipping stage "${stage.name}" due to missing start_day`);
         continue;
       }
 
@@ -137,16 +137,15 @@ const lifecycleScheduler = {
     // 2. Generation: Fertilizer Schedule
     const fertSchedule = crop.fertilizer_schedule || [];
     for (const fert of fertSchedule) {
-      const offsetWeeks = parseInt(fert.week);
-      if (isNaN(offsetWeeks)) {
-        // Some schedules use "stage" names instead of weeks; skip for task generation if no week provided
+      const offsetDays = fert.trigger_day; // Using new computable structure ARCH-002
+      if (offsetDays === undefined) {
         continue;
       }
 
       const fertDate = new Date(currentBaseDate);
-      fertDate.setDate(currentBaseDate.getDate() + (offsetWeeks * 7));
+      fertDate.setDate(currentBaseDate.getDate() + offsetDays);
 
-      const inputName = fert.input || fert.product || 'Nutrients';
+      const inputName = fert.product || 'Nutrients';
       const title = `Apply ${inputName} (Fert Cycle)`.trim();
       
       if (title && !title.includes('undefined')) {
