@@ -127,8 +127,8 @@ function Batches() {
     const crop = getCrop(cropId);
     if (!crop) return '';
     
-    // Sweet Basil Override (14 days germ/rooting based on Blueprint)
-    const daysOffset = (crop.common_name === 'Sweet Basil') ? 14 : (crop.rooting_or_germ_days || 0);
+    // Sweet Basil Override (35 days full nursery period based on Blueprint)
+    const daysOffset = (crop.common_name === 'Sweet Basil') ? 35 : (crop.rooting_or_germ_days || 0);
 
     // Robust parsing for mobile browsers
     const date = parseDateInternal(startDateStr);
@@ -144,6 +144,20 @@ function Batches() {
   const handleTrayDateChange = (dateStr) => {
     const targetDate = calculateTargetDate(trayForm.crop_id, dateStr);
     setTrayForm({ ...trayForm, sowing_date: dateStr, target_transplant_date: targetDate });
+  };
+
+  /**
+   * FEAT-019/027: Growth Stage Calculation
+   */
+  const getGrowthStage = (entity, startDate) => {
+    const crop = getCrop(entity.crop_id);
+    if (!crop || !crop.stages || !startDate) return null;
+    
+    const daysIn = Math.floor((new Date() - parseDateInternal(startDate)) / (1000 * 60 * 60 * 24));
+    
+    // Find matching stage
+    const currentStage = crop.stages.find(s => daysIn >= s.start_day && daysIn <= s.end_day);
+    return currentStage || crop.stages[crop.stages.length - 1]; // Default to last stage
   };
 
   // Filtered lists
@@ -315,8 +329,16 @@ function Batches() {
   const deletePlot = async (id) => {
     if(await confirmAction('Delete this plot? (Warning: This will cascade delete harvest logs and scheduled tasks!)', { confirmText: 'Yes, Delete' })) {
       try {
-        // Remove linked tasks first to satisfy FK constraints in non-cascade schemas.
+        // 1. Unassign any trays linked to this plot to satisfy foreign key constraints
+        await supabase
+          .from('trays')
+          .update({ assigned_plot_id: null })
+          .eq('assigned_plot_id', id);
+
+        // 2. Remove linked tasks first to satisfy FK constraints in non-cascade schemas.
         await lifecycleScheduler.cleanupTasks(id, 'plot', { includeAllStatuses: true });
+        
+        // 3. Finally delete the plot
         await db.delete('plots', id);
         toast.success('Plot and tasks deleted.');
         load();
@@ -582,25 +604,36 @@ function Batches() {
                if (tray.status === 'Completed' || tray.status === 'Transplanted') badgeColor = 'bg-green-500/20 text-green-400 opacity-50';
 
                const daysIn = tray.sowing_date ? Math.floor((new Date() - new Date(tray.sowing_date)) / (1000 * 60 * 60 * 24)) : 0;
-               const germDays = crop?.rooting_or_germ_days;
-               const showProgress = germDays && tray.status !== 'Completed' && tray.status !== 'Transplanted';
+               const nurseryDays = crop?.avg_nursery_days || crop?.rooting_or_germ_days;
+               const showProgress = nurseryDays && tray.status !== 'Completed' && tray.status !== 'Transplanted';
                return (
                 <div key={tray.tray_id || tray.id} className="glass-card p-4 group select-none active:bg-black/5 transition-colors">
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-mono text-themed-muted">{tray.tray_code}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-themed-muted">{tray.tray_code}</span>
+                        {(() => {
+                          const stage = getGrowthStage(tray, tray.sowing_date);
+                          if (!stage || tray.status === 'Completed') return null;
+                          return (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 'bg-white/10 text-themed-muted'}`}>
+                              {stage.name}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <h3 className="font-semibold text-themed-heading">{crop ? crop.common_name : 'Unknown Crop'}</h3>
                       <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><Calendar size={12}/> Target Transplant: {tray.target_transplant_date}</p>
                       {showProgress && (
                         <div className="mt-3">
                           <div className="flex justify-between items-center mb-1 text-[10px] font-bold uppercase tracking-wider text-indigo-400">
-                            <span>Day {daysIn} of {germDays}</span>
-                            <span>{Math.min(100, Math.floor((daysIn / germDays) * 100))}%</span>
+                            <span>Day {daysIn} of {nurseryDays}</span>
+                            <span>{Math.min(100, Math.floor((daysIn / nurseryDays) * 100))}%</span>
                           </div>
                           <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-indigo-500 transition-all duration-1000"
-                              style={{ width: `${Math.min(100, (daysIn / germDays) * 100)}%` }}
+                              style={{ width: `${Math.min(100, (daysIn / nurseryDays) * 100)}%` }}
                             />
                           </div>
                         </div>
@@ -813,7 +846,18 @@ function Batches() {
                 <div key={batch.batch_id || batch.id} className={`glass-card p-4 group select-none active:bg-black/5 transition-colors ${batch.status === 'Completed' ? 'opacity-50' : ''}`}>
                   <div className="flex justify-between items-start">
                     <div>
-                      <span className="text-xs font-mono text-themed-muted">{batch.batch_code}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-themed-muted">{batch.batch_code}</span>
+                        {(() => {
+                          const stage = getGrowthStage(batch, batch.start_date);
+                          if (!stage || batch.status === 'Completed') return null;
+                          return (
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 'bg-white/10 text-themed-muted'}`}>
+                              {stage.name}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <h3 className="font-semibold text-themed-heading">{crop ? crop.common_name : 'Unknown Crop'}</h3>
                       <p className="text-xs text-themed-muted mt-1 flex items-center gap-1"><MapPin size={12}/> {batch.propagation_method}</p>
                       {batch.start_date && crop?.days_to_maturity && batch.status === 'Nursery' && (
@@ -1316,14 +1360,21 @@ function Batches() {
 /**
  * FEAT-019: Historical Ledger Component
  */
-function HistoryLedger({ entityId, entityType, logs, tasks }) {
+function HistoryLedger({ entityId, entityType, logs, tasks, trays = [] }) {
+  // FEAT-025: Seed-to-Harvest Traceability logic
+  const trayIdsForPlot = entityType === 'plot' 
+    ? trays.filter(t => t.assigned_plot_id === entityId).map(t => t.tray_id || t.id)
+    : [];
+
   const filteredLogs = logs.filter(l => 
     l[`${entityType}_id`] === entityId || 
-    (l.target_ids && l.target_ids.includes(entityId))
+    (l.target_ids && l.target_ids.includes(entityId)) ||
+    (entityType === 'plot' && l.target_ids && trayIdsForPlot.some(id => l.target_ids.includes(id)))
   );
 
   const filteredTasks = tasks.filter(t => 
-    t[`${entityType}_id`] === entityId && (t.status === 'Completed' || t.status === 'Missed')
+    (t[`${entityType}_id`] === entityId || (entityType === 'plot' && trayIdsForPlot.includes(t.tray_id))) && 
+    (t.status === 'Completed' || t.status === 'Missed')
   );
 
   // Combine and sort chronologically (newest first)

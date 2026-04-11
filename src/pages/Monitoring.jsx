@@ -90,6 +90,10 @@ function Monitoring() {
   const [targetAnswers, setTargetAnswers] = useState({});
   const [diagnosticCategory, setDiagnosticCategory] = useState('');
   const [diagnosticSymptom, setDiagnosticSymptom] = useState('');
+  const [showDiagnosisResult, setShowDiagnosisResult] = useState(false);
+  const [diagnosisData, setDiagnosisData] = useState(null);
+
+  const [sessionSummary, setSessionSummary] = useState(null);
 
 
   // Quick Log state
@@ -109,9 +113,21 @@ function Monitoring() {
   const getAllTargets = () => {
     const plotTargets = plots
       .filter(p => p.status === 'Active')
-      .map(p => ({ id: p.plot_id || p.id, label: `${p.plot_code} (${getCropName(p.crop_id)})`, type: 'plot' }));
+      .map(p => ({ 
+        id: p.plot_id || p.id, 
+        label: `${p.plot_code} (${getCropName(p.crop_id)})`, 
+        type: 'plot',
+        crop_id: p.crop_id,
+        start_date: p.sowing_date 
+      }));
     const batchTargets = batches
-      .map(b => ({ id: b.batch_id || b.id, label: `${b.batch_code} (${getCropName(b.crop_id)})`, type: 'batch' }));
+      .map(b => ({ 
+        id: b.batch_id || b.id, 
+        label: `${b.batch_code} (${getCropName(b.crop_id)})`, 
+        type: 'batch',
+        crop_id: b.crop_id,
+        start_date: b.start_date
+      }));
     return [...plotTargets, ...batchTargets];
   };
 
@@ -119,9 +135,6 @@ function Monitoring() {
 
   // Session history
   const [showHistory, setShowHistory] = useState(false);
-
-  // Summary data for post-session
-  const [sessionSummary, setSessionSummary] = useState(null);
 
   const load = async () => {
     try {
@@ -156,6 +169,13 @@ function Monitoring() {
       console.error(err);
     }
     setLoading(false);
+  };
+
+  const getGrowthStage = (entity) => {
+    const crop = crops.find(c => c.id === entity.crop_id);
+    if (!crop || !crop.stages || !entity.start_date) return null;
+    const daysIn = Math.floor((new Date() - new Date(entity.start_date)) / (1000 * 60 * 60 * 24));
+    return crop.stages.find(s => daysIn >= s.start_day && daysIn <= s.end_day) || crop.stages[crop.stages.length - 1];
   };
 
   const getSmartRecommendation = () => {
@@ -360,7 +380,7 @@ function Monitoring() {
 
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
-        action_category: 'Maintenance',
+        action_category: 'Scouting',
         method_product: resolutionData.action, 
         target_ids: [resolvingIssue.target_id],
         notes: `FIXED: ${resolvingIssue.issue_type} - ${resolutionData.action}. ${resolutionData.notes}`
@@ -463,18 +483,33 @@ function Monitoring() {
 
     for (const issue of sessionSummary.createdIssues) {
       let titleStr = `Resolve: ${issue.description.substring(0, 80)}`;
+      let actionType = 'Chemical'; // Default for diagnostics
+      let recProduct = null;
+      
+      // Look up recommendations for this specific issue
+      const crop = crops.find(c => c.id === issue.crop_id);
+      if (crop) {
+        const pestRec = crop.pest_records?.find(p => p.pest === issue.specific_symptom || (issue.specific_symptom && issue.specific_symptom.includes(p.pest)));
+        const diseaseRec = crop.disease_records?.find(d => d.disease === issue.specific_symptom || (issue.specific_symptom && issue.specific_symptom.includes(d.disease)));
+        recProduct = (pestRec || diseaseRec)?.recommended_action;
+      }
 
       // DIAGNOSTIC MAPPING FOR AUTO-TASKS
       if (issue.specific_symptom === 'Grey Fuzz (Downy Mildew)') {
         titleStr = `CRITICAL: Increase spacing and stop overhead irrigation for ${issue.description.split(': ')[1].split(' | ')[0]} (Downy Mildew)`;
+        actionType = 'Physical';
       } else if (issue.specific_symptom === 'Aphids/Honeydew' || issue.specific_symptom === 'Whiteflies') {
         titleStr = `IPM: Cull infested Nasturtium trap crops near ${issue.description.split(': ')[1].split(' | ')[0]}`;
+        actionType = 'Physical';
       } else if (issue.specific_symptom === 'Sudden Wilting (Fusarium Risk)') {
         titleStr = `BIOSECURITY: Quarantine and check drainage for ${issue.description.split(': ')[1].split(' | ')[0]} (Fusarium)`;
+        actionType = 'Physical';
       } else if (issue.specific_symptom === 'Root-Knot Nematodes') {
         titleStr = `IPM: Inspect French Marigold root defenders near ${issue.description.split(': ')[1].split(' | ')[0]}`;
+        actionType = 'Physical';
       } else if (issue.specific_symptom === 'Bacterial Leaf Spot') {
         titleStr = `PATHOGEN: Monitor leaf wetness and protect ${issue.description.split(': ')[1].split(' | ')[0]} from monsoon rains`;
+        actionType = 'Physical';
       } else if (issue.specific_symptom === 'Pale Leaves/Low Vigor (Nitrogen Leaching)') {
         titleStr = `NUTRITION: Sidedress 15-30 lbs N/acre or liquid feed ${issue.description.split(': ')[1].split(' | ')[0]}`;
       }
@@ -487,6 +522,8 @@ function Monitoring() {
       );
 
       if (!exists) {
+        const actualProduct = recProduct ? consumables.find(c => c.product_name === recProduct.target_product_name) : null;
+
         await db.insert('tasks', {
           title: titleStr,
           due_date: new Date().toISOString().split('T')[0],
@@ -494,6 +531,10 @@ function Monitoring() {
           status: 'Pending',
           is_auto_generated: true,
           [issue.target_type === 'plot' ? 'plot_id' : 'batch_id']: issue.target_id,
+          action_type: actionType,
+          recommended_product_id: actualProduct?.input_id || null,
+          recommended_dosage_value: recProduct?.dosage_value || null,
+          recommended_dosage_unit: recProduct?.dosage_unit || null
         });
         createdCount++;
       }
@@ -520,6 +561,56 @@ function Monitoring() {
       <div className="loading-spinner mx-auto" />
     </div>
   );
+
+
+  if (step === 'summary' && sessionSummary) {
+    const flagCount = sessionSummary.createdIssues?.length || 0;
+    return (
+      <div className="page-enter h-full flex flex-col" style={{ background: 'var(--color-bg-primary)' }}>
+        <div className="flex-1 overflow-y-auto px-5 py-8">
+          <div className="text-center mb-8">
+            <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center mb-4" style={{ background: flagCount > 0 ? '#f59e0b20' : '#10b98120' }}>
+              {flagCount > 0
+                ? <AlertTriangle size={36} style={{ color: '#f59e0b' }} />
+                : <Check size={36} style={{ color: '#10b981' }} />
+              }
+            </div>
+            <h2 className="text-2xl font-display font-bold mb-1" style={{ color: 'var(--color-text-heading)' }}>
+              {flagCount > 0 ? `${flagCount} Issue${flagCount > 1 ? 's' : ''} Flagged` : 'All Clear!'}
+            </h2>
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              {sessionType} · {sessionSummary.responseCount} responses recorded
+            </p>
+          </div>
+
+          {flagCount > 0 && (
+            <div className="space-y-2 mb-6 text-left">
+              <p className="text-[10px] font-black uppercase tracking-widest mb-3 opacity-50">Diagnostic Log</p>
+              {sessionSummary.createdIssues.map((issue, i) => (
+                <div key={i} className="glass-card-static p-4 rounded-2xl border-l-[4px]" style={{ borderColor: issue.severity === 'High' ? '#ef4444' : '#f59e0b' }}>
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-[9px] font-black px-2 py-0.5 rounded bg-themed-muted/10" style={{ color: issue.severity === 'High' ? '#ef4444' : '#f59e0b' }}>{issue.severity}</span>
+                  </div>
+                  <p className="text-sm font-bold leading-tight" style={{ color: 'var(--color-text-primary)' }}>{issue.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="shrink-0 px-5 py-6 space-y-3 border-t bg-themed-nav" style={{ borderColor: 'var(--color-border)' }}>
+          {flagCount > 0 && (
+            <button onClick={createTasksFromFlags} className="btn-primary w-full !py-4.5 !rounded-[1.5rem] justify-center text-base shadow-xl shadow-emerald-500/20 active:scale-95 transition-all">
+              <Zap size={20} className="fill-current" /> Create Tasks ({flagCount})
+            </button>
+          )}
+          <button onClick={() => { setStep('home'); setSessionSummary(null); }} className="w-full py-4 rounded-[1.5rem] text-sm font-bold border border-themed-border text-themed-muted hover:bg-themed-muted/5">
+            Dismiss Walk ✓
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   /* =========================================
      HOME SCREEN
@@ -971,10 +1062,19 @@ function Monitoring() {
                   const checked = targetChecks.find(tc => tc.id === plot.plot_id);
                   const hasFlagged = checked && checked.diagnosticCategory && checked.diagnosticCategory !== 'None';
 
-                  return (
-                    <button key={plot.plot_id} onClick={() => {
-                      if (!checked) { setSelectedTarget({ type: 'plot', id: plot.plot_id, name: plot.plot_code, crop_id: plot.crop_id }); setTargetAnswers({}); }
-                    }} className="glass-card w-full p-4 text-left flex items-center gap-4 active:scale-[0.99] transition-transform"
+                    return (
+                      <button key={plot.plot_id} onClick={() => {
+                        if (!checked) { 
+                          setSelectedTarget({ 
+                            type: 'plot', 
+                            id: plot.plot_id, 
+                            name: plot.plot_code, 
+                            crop_id: plot.crop_id,
+                            start_date: plot.sowing_date
+                          }); 
+                          setTargetAnswers({}); 
+                        }
+                      }} className="glass-card w-full p-4 text-left flex items-center gap-4 active:scale-[0.99] transition-transform"
                       style={{ opacity: checked ? 0.85 : 1 }}>
                       <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${checked ? (hasFlagged ? 'bg-red-500/20' : 'bg-emerald-500/20') : ''}`}
                         style={{ background: !checked ? 'var(--color-bg-card)' : '' }}>
@@ -1003,7 +1103,16 @@ function Monitoring() {
 
                   return (
                     <button key={batch.batch_id} onClick={() => {
-                      if (!checked) { setSelectedTarget({ type: 'batch', id: batch.batch_id, name: batch.batch_code, crop_id: batch.crop_id }); setTargetAnswers({}); }
+                      if (!checked) { 
+                        setSelectedTarget({ 
+                          type: 'batch', 
+                          id: batch.batch_id, 
+                          name: batch.batch_code, 
+                          crop_id: batch.crop_id,
+                          start_date: batch.start_date
+                        }); 
+                        setTargetAnswers({}); 
+                      }
                     }} className="glass-card w-full p-4 text-left flex items-center gap-4 active:scale-[0.99] transition-transform">
                       <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0`}
                         style={{ background: checked ? (hasFlagged ? '#ef444420' : '#10b98120') : 'var(--color-bg-card)' }}>
@@ -1105,7 +1214,18 @@ function Monitoring() {
           <div className="relative w-full max-w-lg animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex items-start justify-between mb-5">
               <div>
-                <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>{selectedTarget.name}</h2>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>{selectedTarget.name}</h2>
+                  {(() => {
+                    const stage = getGrowthStage(selectedTarget);
+                    if (!stage) return null;
+                    return (
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                        {stage.name}
+                      </span>
+                    );
+                  })()}
+                </div>
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                   {getCropName(selectedTarget.crop_id)} · {selectedTarget.type === 'batch' ? 'Nursery Batch' : 'Growing Plot'}
                 </p>
@@ -1165,7 +1285,42 @@ function Monitoring() {
                 <p className="text-[10px] text-themed-muted leading-relaxed">Selecting a specific symptom will auto-generate remediation tasks and trigger withhold-period locks on the production floor.</p>
               </div>
 
-              {/* SMART TRIAGE ENGINE (FEAT-019) */}
+              {/* STAGE-AWARE SMART CHECKS (FEAT-027) */}
+              {(() => {
+                const stage = getGrowthStage(selectedTarget);
+                if (!stage) return null;
+                
+                let checkQuestion = null;
+                if (stage.name.includes('Veg')) checkQuestion = { id: 'vigorous_growth', q: "Showing vigorous node development?", flag: false };
+                else if (stage.name.includes('Reproductive')) checkQuestion = { id: 'bolting_check', q: "Are there signs of flowering/bolting?", flag: true };
+                
+                if (!checkQuestion) return null;
+
+                const answered = targetAnswers[checkQuestion.id];
+                const isFlagged = answered === 'Yes' && checkQuestion.flag;
+
+                return (
+                  <div className="p-5 rounded-3xl bg-themed-muted/5 border border-themed-border animate-in fade-in zoom-in-95 duration-500">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Zap size={16} className="text-amber-500" />
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Stage-Specific Check</p>
+                    </div>
+                    <p className="text-sm font-semibold mb-3">{checkQuestion.q}</p>
+                    <div className="flex gap-2">
+                      {['Yes', 'No'].map(ans => (
+                        <button key={ans} 
+                          onClick={() => setTargetAnswers(p => ({ ...p, [checkQuestion.id]: ans }))}
+                          className={`flex-1 py-3 rounded-2xl text-xs font-bold transition-all ${answered === ans ? (isFlagged ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white') : 'bg-white/5 text-themed-muted border border-white/10'}`}
+                        >
+                          {ans}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* SMART TRIAGE ENGINE (FEAT-019/021) */}
               {(() => {
                 const smartRec = getSmartRecommendation();
                 if (!smartRec) return null;
@@ -1177,62 +1332,50 @@ function Monitoring() {
                       <div className="bg-emerald-500 px-6 py-4 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Zap size={20} className="text-white animate-pulse" />
-                          <h4 className="text-sm font-black uppercase tracking-widest text-white">Smart Action Plan</h4>
+                          <h4 className="text-sm font-black uppercase tracking-widest text-white">Rich Agronomic Diagnosis</h4>
                         </div>
-                        <span className="text-[10px] bg-white/20 text-white px-3 py-1 rounded-full font-bold backdrop-blur-sm">PROMPT ENGINE ACTIVE</span>
+                        <span className="text-[10px] bg-white/20 text-white px-3 py-1 rounded-full font-bold backdrop-blur-sm">FEAT-021 ACTIVE</span>
                       </div>
                       
-                      <div className="p-6 space-y-5">
+                      <div className="p-6 space-y-5 text-themed-primary">
                         <div className="flex items-start gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
                           <div className="p-3 bg-emerald-500 text-white rounded-xl shadow-lg shadow-emerald-500/20">
                             <Activity size={20} />
                           </div>
                           <div className="flex-1">
-                            <p className="text-[10px] font-black text-emerald-500 uppercase tracking-tighter mb-1">Diagnosis Confirmed</p>
-                            <h5 className="text-base font-bold text-themed-primary">{smartRec.issueName}</h5>
-                            <p className="text-[11px] text-themed-muted leading-tight mt-1">{smartRec.notes || smartRec.application_notes}</p>
+                            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter mb-1">Impact Analysis</p>
+                            <h5 className="text-base font-bold">{smartRec.issueName}</h5>
+                            <p className="text-xs text-themed-muted italic mt-1 leading-snug">
+                                {smartRec.notes || "High risk of secondary infection and biomass loss."}
+                            </p>
                           </div>
+                        </div>
+
+                        {/* Agronomic Context */}
+                        <div className="p-4 bg-emerald-500/5 rounded-2xl border border-emerald-500/10">
+                           <div className="flex items-center gap-2 mb-2">
+                              <AlertCircle size={14} className="text-emerald-500" />
+                              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/70">Context Confidence</p>
+                           </div>
+                           <p className="text-[11px] leading-relaxed">
+                              Matches Environmental Scan: <span className="font-bold">{nurseryAnswers.nursery_temp || 'Normal'} temp</span> and <span className="font-bold">{nurseryAnswers.nursery_humidity || 'Normal'} humidity</span> provide ideal conditions for {smartRec.issueName.toLowerCase()}.
+                           </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                           <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Protocol Action</p>
-                            <p className="text-sm font-bold text-themed-primary flex items-center gap-2">
+                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Recommended Treatment</p>
+                            <p className="text-sm font-bold flex items-center gap-2">
                               <Box size={14} className="text-emerald-500" />
                               {smartRec.product?.product_name || smartRec.target_product_name}
                             </p>
                           </div>
                           <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Inventory Check</p>
-                            <p className={`text-sm font-bold flex items-center gap-2 ${smartRec.isAvailable ? 'text-emerald-500' : 'text-red-500 animate-pulse'}`}>
+                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Status</p>
+                            <p className={`text-sm font-bold flex items-center gap-2 ${smartRec.isAvailable ? 'text-emerald-400' : 'text-red-500 animate-pulse'}`}>
                               <Droplets size={14} />
-                              {smartRec.isAvailable ? `${smartRec.product.current_stock} ${smartRec.product.stock_unit} Available` : 'OUT OF STOCK'}
+                              {smartRec.isAvailable ? 'AVAILABLE' : 'REPLENISH'}
                             </p>
-                          </div>
-                        </div>
-
-                        {!smartRec.isAvailable && smartRec.alternative && (
-                          <div className="mx-0 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-700">
-                             <div className="flex items-center gap-2 mb-2">
-                               <RefreshCw size={12} className="text-amber-600 animate-spin-slow" />
-                               <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Intelligent Alternative Found</p>
-                             </div>
-                             <div className="flex justify-between items-center">
-                               <p className="text-sm font-bold text-amber-700">{smartRec.alternative.product_name}</p>
-                               <span className="text-[10px] font-black bg-amber-500/20 text-amber-700 px-2 py-0.5 rounded-full">{smartRec.alternative.current_stock} {smartRec.alternative.stock_unit}</span>
-                             </div>
-                             <p className="text-[9px] text-amber-600/70 mt-1">Substitute found in Farm Consumables. dosage may vary.</p>
-                          </div>
-                        )}
-
-                        <div className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                          <div>
-                            <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Dosage Window</p>
-                            <p className="text-lg font-black text-themed-primary">{smartRec.dosage_value || '—'}{smartRec.dosage_unit || ''}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter">Withholding Period</p>
-                            <p className="text-sm font-bold text-themed-primary">{smartRec.product?.withholding_days ?? 0} Days SAFE</p>
                           </div>
                         </div>
                       </div>
@@ -1254,58 +1397,6 @@ function Monitoring() {
       )}
     </div>
   );
-
-  /* =========================================
-     SUMMARY SCREEN
-  ========================================= */
-  if (step === 'summary' && sessionSummary) {
-    const flagCount = sessionSummary.createdIssues?.length || 0;
-    return (
-      <div className="page-enter flex flex-col h-full" style={{ background: 'var(--color-bg-primary)' }}>
-        <div className="flex-1 overflow-y-auto px-5 py-8">
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 rounded-full mx-auto flex items-center justify-center mb-4" style={{ background: flagCount > 0 ? '#f59e0b20' : '#10b98120' }}>
-              {flagCount > 0
-                ? <AlertTriangle size={36} style={{ color: '#f59e0b' }} />
-                : <Check size={36} style={{ color: '#10b981' }} />
-              }
-            </div>
-            <h2 className="text-2xl font-display font-bold mb-1" style={{ color: 'var(--color-text-heading)' }}>
-              {flagCount > 0 ? `${flagCount} Issue${flagCount > 1 ? 's' : ''} Flagged` : 'All Clear!'}
-            </h2>
-            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-              {sessionType} · {sessionSummary.responseCount} responses recorded
-            </p>
-          </div>
-
-          {flagCount > 0 && (
-            <div className="space-y-2 mb-6">
-              <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--color-text-muted)' }}>Flagged Issues</p>
-              {sessionSummary.createdIssues.map((issue, i) => (
-                <div key={i} className="glass-card-static p-3 rounded-xl" style={{ borderLeft: `3px solid ${issue.severity === 'High' ? '#ef4444' : '#f59e0b'}` }}>
-                  <span className="text-[10px] font-bold" style={{ color: issue.severity === 'High' ? '#ef4444' : '#f59e0b' }}>{issue.severity} Severity</span>
-                  <p className="text-sm mt-0.5 line-clamp-2" style={{ color: 'var(--color-text-primary)' }}>{issue.description}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="shrink-0 px-5 py-5 space-y-3 border-t" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-nav)' }}>
-          {flagCount > 0 && (
-            <button onClick={createTasksFromFlags} className="btn-primary w-full !py-4 !rounded-2xl justify-center text-base">
-              <Zap size={18} /> Create Tasks from {flagCount} Flag{flagCount > 1 ? 's' : ''}
-            </button>
-          )}
-          <button onClick={() => { setStep('home'); setSessionSummary(null); }} className="w-full py-4 rounded-2xl text-sm font-bold" style={{ background: 'var(--color-bg-card)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
-            Back to Farm Walk
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
 }
 
 export default Monitoring;

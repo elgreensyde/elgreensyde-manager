@@ -42,7 +42,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
             priority: 'High',
             status: 'Pending',
             plot_id: plot.plot_id || plot.id,
-            is_auto_generated: true
+            is_auto_generated: true,
+            action_type: 'Physical'
           });
         }
       }
@@ -66,7 +67,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
             priority: 'High',
             status: 'Pending',
             batch_id: batch.batch_id || batch.id,
-            is_auto_generated: true
+            is_auto_generated: true,
+            action_type: 'Physical'
           });
         }
       }
@@ -83,7 +85,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
           due_date: new Date().toISOString().split('T')[0],
           priority: 'Low',
           status: 'Pending',
-          is_auto_generated: true
+          is_auto_generated: true,
+          action_type: 'Physical'
         });
       }
     }
@@ -99,7 +102,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
         priority: 'Low',
         status: 'Pending',
         plot_id: plot.plot_id || plot.id,
-        is_auto_generated: true
+        is_auto_generated: true,
+        action_type: 'Physical'
       });
     }
   });
@@ -120,7 +124,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
         due_date: new Date().toISOString().split('T')[0],
         priority: 'High',
         status: 'Pending',
-        is_auto_generated: true
+        is_auto_generated: true,
+        action_type: 'Physical'
       });
     }
   }
@@ -140,17 +145,13 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
           priority: 'High',
           status: 'Pending',
           tray_id: tray.tray_id || tray.id,
-          is_auto_generated: true
+          is_auto_generated: true,
+          action_type: 'Physical'
         });
       }
     }
   });
 
-  // Note on Rule 8: Priority Escalation is handled passively 
-  // We can't return "new" tasks for escalation, we must return a separate list of updates
-  // Or better, we can modify the task table here if we had db access, 
-  // but this function is pure. Dashboard will handle priority bumping via existingTasks check.
-  
   // Rule 9: Weather Defense Rule (Agronomic Upgrade)
   if (weatherHourly) {
     const risk = weatherService.analyzeDiseaseRisk(weatherHourly);
@@ -162,7 +163,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
           due_date: new Date().toISOString().split('T')[0],
           priority: 'High',
           status: 'Pending',
-          is_auto_generated: true
+          is_auto_generated: true,
+          action_type: 'Physical'
         });
       }
     }
@@ -178,13 +180,13 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
         priority: 'Medium',
         status: 'Pending',
         plot_id: plot.plot_id || plot.id,
-        is_auto_generated: true
+        is_auto_generated: true,
+        action_type: 'Chemical'
       });
     }
   });
 
   // Rule 11: Regeneration Feeding Rule
-  // Find completed wholesale harvest tasks
   existingTasks.filter(t => t.status === 'Completed' && t.title.toLowerCase().includes('harvest') && t.completed_at).forEach(task => {
     const completedDate = new Date(task.completed_at);
     completedDate.setHours(0,0,0,0);
@@ -198,7 +200,8 @@ export function runDailyTaskGeneration(existingTasks, plots, batches, harvest_lo
           due_date: new Date().toISOString().split('T')[0],
           priority: 'High',
           status: 'Pending',
-          is_auto_generated: true
+          is_auto_generated: true,
+          action_type: 'Chemical'
         });
       }
     }

@@ -19,7 +19,13 @@ function Tasks() {
   const [loading, setLoading] = useState(true);
   const [inputs, setInputs] = useState([]);
   const [activeTaskForLog, setActiveTaskForLog] = useState(null);
-  const [logForm, setLogForm] = useState({ input_id: '', amount: '', unit: '' });
+  const [logForm, setLogForm] = useState({ 
+    input_id: '', 
+    amount: '', 
+    unit: '',
+    labor_minutes: 0,
+    notes: '' 
+  });
   const [form, setForm] = useState({ title: '', due_date: new Date().toISOString().split('T')[0], priority: 'Medium', batch_id: '', plot_id: '' });
 
   const loadData = async () => {
@@ -49,7 +55,7 @@ function Tasks() {
 
     if (overdueToEscalate.length > 0) {
       await Promise.all(overdueToEscalate.map(task => 
-        db.update('tasks', task.task_id || task.id, { priority: 'Critical' })
+        db.update('tasks', task.task_id || task.id, { priority: 'High' })
       ));
     }
 
@@ -113,41 +119,38 @@ function Tasks() {
 
   const performLogExecution = async (e) => {
     e.preventDefault();
-    if (!activeTaskForLog || !logForm.input_id || !logForm.amount) return;
+    if (!activeTaskForLog) return;
     
     try {
-      const input = inputs.find(i => i.input_id === logForm.input_id);
-      if (!input) return;
+      const isPhysical = activeTaskForLog.action_type === 'Physical';
+      
+      let input = null;
+      let deduction = 0;
 
-      const resolveActionCategory = (inputType = '') => {
-        const normalized = inputType.toLowerCase();
-        if (normalized.includes('fertilizer') || normalized.includes('amendment')) return 'Fertilize';
-        if (normalized.includes('pesticide') || normalized.includes('fungicide')) return 'Pest Treatment';
-        return 'Scouting';
-      };
+      if (!isPhysical) {
+        if (!logForm.input_id || !logForm.amount) return toast.error('Product and amount are required.');
+        input = inputs.find(i => i.input_id === logForm.input_id);
+        if (!input) return;
 
-      const deduction = parseFloat(logForm.amount);
-      if (input.current_stock < deduction) {
-        toast.error(`Insufficient stock! ${input.product_name} only has ${input.current_stock}${input.stock_unit} available.`);
-        return;
+        deduction = parseFloat(logForm.amount);
+        if (input.current_stock < deduction) {
+          toast.error(`Insufficient stock! ${input.product_name} only has ${input.current_stock}${input.stock_unit} available.`);
+          return;
+        }
+        // 1. Deduct Inventory
+        await db.update('inputs_inventory', input.input_id, { current_stock: input.current_stock - deduction });
       }
-
-      // 1. Deduct Inventory
-      await db.update('inputs_inventory', input.input_id, { current_stock: input.current_stock - deduction });
-
-      // Map input.type to valid action_category
-      let category = 'Fertilize';
-      if (input.type === 'Organic Pesticide' || input.type === 'Fungicide') category = 'Pest Treatment';
 
       // 2. Create Maintenance Log
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
-        action_category: category,
+        action_category: isPhysical ? 'Scouting' : (input?.type?.includes('Pesticide') ? 'Pest Treatment' : 'Fertilize'),
         target_ids: activeTaskForLog.plot_id ? [activeTaskForLog.plot_id] : activeTaskForLog.batch_id ? [activeTaskForLog.batch_id] : [],
-        method_product: input.product_name,
-        dosage_rate: `${logForm.amount} ${logForm.unit || input.stock_unit}`,
-        notes: `Executed via Task: ${activeTaskForLog.title}`,
-        withholding_period_days: input.withholding_days || 0
+        method_product: isPhysical ? 'Manual Labor' : input.product_name,
+        dosage_rate: isPhysical ? 'N/A' : `${logForm.amount} ${logForm.unit || input.stock_unit}`,
+        notes: logForm.notes || `Executed via Task: ${activeTaskForLog.title}`,
+        labor_minutes: parseInt(logForm.labor_minutes || 0),
+        withholding_period_days: input?.withholding_days || 0
       });
 
       // 3. Mark Task as Completed
@@ -156,9 +159,9 @@ function Tasks() {
         completed_at: new Date().toISOString() 
       });
 
-      toast.success(`Deducted ${logForm.amount}${input.stock_unit} and logged maintenance!`);
+      toast.success(isPhysical ? 'Labor logged and task completed!' : `Deducted ${logForm.amount}${input.stock_unit} and logged maintenance!`);
       setActiveTaskForLog(null);
-      setLogForm({ input_id: '', amount: '', unit: '' });
+      setLogForm({ input_id: '', amount: '', unit: '', labor_minutes: 0, notes: '' });
       loadData();
     } catch (err) {
       toast.error('Failed to process execution.');
@@ -193,24 +196,17 @@ function Tasks() {
   const handleOpenLog = (task) => {
      setActiveTaskForLog(task);
      
-     // SMART DEFAULTS for FEAT-018
-     let defaultInputId = '';
-     let defaultAmount = '';
+     // SMART DEFAULTS (FEAT-022) using explicit DB columns
+     const defaultInputId = task.recommended_product_id || '';
+     const defaultAmount = task.recommended_dosage_value || '';
+     const defaultUnit = task.recommended_dosage_unit || (inputs.find(i => i.input_id === defaultInputId)?.stock_unit || '');
      
-     if (task.category === 'Fertilize' || task.title.toLowerCase().includes('urea')) {
-        const product = inputs.find(i => i.product_name.toLowerCase().includes('urea') || i.product_name.toLowerCase().includes('14-14-14'));
-        if (product) defaultInputId = product.input_id;
-        defaultAmount = '5'; // Standard basal/side-dress
-     } else if (task.category === 'Pest Treatment' || task.title.toLowerCase().includes('spray')) {
-        const product = inputs.find(i => i.product_name.toLowerCase().includes('neem') || i.product_name.toLowerCase().includes('bicarb'));
-        if (product) defaultInputId = product.input_id;
-        defaultAmount = '5';
-     }
-
      setLogForm({ 
        input_id: defaultInputId, 
        amount: defaultAmount, 
-       unit: inputs.find(i => i.input_id === defaultInputId)?.stock_unit || '' 
+       unit: defaultUnit,
+       labor_minutes: task.action_type === 'Physical' ? 30 : 5, // Default labor estimates
+       notes: ''
      });
   };
 
@@ -315,62 +311,87 @@ function Tasks() {
         </div>
       )}
 
-      {/* LOG EXECUTION MODAL */}
+      {/* LOG EXECUTION MODAL (FEAT-022 / ARCH-003) */}
       {activeTaskForLog && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setActiveTaskForLog(null)} />
           <div className="relative w-full max-w-md animate-slide-up rounded-3xl p-6 border max-h-[90vh] overflow-y-auto mt-[5vh] sm:mt-0" style={{ background: 'var(--color-bg-modal)', borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2">Execute with Inputs</h2>
+              <h2 className="text-lg font-bold text-themed-heading flex items-center gap-2">
+                {activeTaskForLog.action_type === 'Physical' ? 'Log Physical Labor' : 'Execute with Inputs'}
+              </h2>
               <button onClick={() => setActiveTaskForLog(null)} className="text-themed-muted hover:text-themed-heading"><X size={20}/></button>
             </div>
             
             <form onSubmit={performLogExecution} className="space-y-4">
-              <div className="p-3 bg-white/5 rounded-xl border border-white/5 mb-4">
-                <p className="text-xs text-themed-muted uppercase">Task</p>
-                <p className="font-semibold text-sm text-themed-heading">{activeTaskForLog.title}</p>
+              <div className="p-4 bg-white/5 rounded-2xl border border-white/5 mb-4">
+                <p className="text-[10px] text-themed-muted uppercase font-black tracking-widest">Selected Task</p>
+                <p className="font-bold text-sm text-themed-heading mt-1">{activeTaskForLog.title}</p>
               </div>
 
-              {!activeTaskForLog.title.toLowerCase().includes('watering') && (
-                <div>
-                  <label className="text-xs text-themed-muted block mb-1">Select Input (Fertilizer/Pesticide) *</label>
-                  <select required value={logForm.input_id} onChange={e => setLogForm({...logForm, input_id: e.target.value})} className="input-field w-full">
-                    <option value="">Select Consumable...</option>
-                    {inputs.map(i => (
-                      <option key={i.input_id} value={i.input_id}>
-                        {i.product_name} ({i.current_stock} {i.stock_unit} available)
-                      </option>
-                    ))}
-                  </select>
-                  {inputs.length === 0 && <p className="text-[10px] text-amber-500 mt-1">No consumables found in inventory.</p>}
-                </div>
-              )}
+              {activeTaskForLog.action_type !== 'Physical' ? (
+                <>
+                  <div>
+                    <label className="text-xs text-themed-muted block mb-2 font-bold uppercase tracking-tighter">Consumable Product *</label>
+                    <select required value={logForm.input_id} onChange={e => setLogForm({...logForm, input_id: e.target.value})} className="input-field w-full py-4 text-sm font-bold">
+                      <option value="">Select Product...</option>
+                      {inputs.map(i => (
+                        <option key={i.input_id} value={i.input_id}>
+                          {i.product_name} ({i.current_stock} {i.stock_unit} in stock)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {!activeTaskForLog.title.toLowerCase().includes('watering') ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-themed-muted block mb-1">Amount Used *</label>
-                    <input type="number" required step="0.01" value={logForm.amount} onChange={e => setLogForm({...logForm, amount: e.target.value})} className="input-field w-full" placeholder="e.g. 50" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-themed-muted block mb-1">Unit</label>
-                    <input type="text" readOnly value={inputs.find(i => i.input_id === logForm.input_id)?.stock_unit || '--'} className="input-field w-full bg-black/10 opacity-60" />
-                  </div>
-                </div>
-              ) : (
-                 <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
-                        <CheckCircle2 size={24} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-themed-muted block mb-2 font-bold uppercase tracking-tighter">Amount Used *</label>
+                      <input type="number" required step="0.01" value={logForm.amount} onChange={e => setLogForm({...logForm, amount: e.target.value})} className="input-field w-full py-4 font-bold" placeholder="e.g. 5.0" />
                     </div>
-                    <p className="text-sm font-bold text-blue-400">Confirm entire zone watered correctly.</p>
-                 </div>
+                    <div>
+                      <label className="text-xs text-themed-muted block mb-2 font-bold uppercase tracking-tighter">Unit</label>
+                      <input type="text" readOnly value={inputs.find(i => i.input_id === logForm.input_id)?.stock_unit || '--'} className="input-field w-full py-4 bg-black/10 opacity-60 font-mono" />
+                    </div>
+                  </div>
+
+                  {logForm.input_id && inputs.find(i => i.input_id === logForm.input_id)?.withholding_days > 0 && (
+                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 animate-pulse">
+                        <AlertTriangle size={20} className="text-red-500" />
+                        <div>
+                          <p className="text-xs font-black text-red-500 uppercase tracking-widest">Safety Warning</p>
+                          <p className="text-[11px] text-red-400 font-bold">Withdrawal Period: {inputs.find(i => i.input_id === logForm.input_id).withholding_days} Days. Do not sell until safe.</p>
+                        </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="p-6 bg-blue-500/10 border border-blue-500/20 rounded-[2rem] flex flex-col items-center gap-4 text-center">
+                   <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center text-blue-500">
+                       <Clock size={32} />
+                   </div>
+                   <div>
+                      <h4 className="text-sm font-black text-blue-400 uppercase tracking-widest leading-none mb-2">Physical Intervention</h4>
+                      <p className="text-[11px] text-blue-400/70">Logging time spent and corrective labor for this bed. Inventory deduction skipped.</p>
+                   </div>
+                </div>
               )}
 
-              <div className="text-[10px] text-themed-muted mt-4">
-                This will deduct from <span className="text-amber-500">Inputs Inventory</span> and create a <span className="text-blue-500">Maintenance Log</span> entry linked to this target.
+              <div>
+                <label className="text-xs text-themed-muted block mb-2 font-bold uppercase tracking-tighter">Labor Time (Minutes)</label>
+                <div className="relative">
+                  <input type="number" value={logForm.labor_minutes} onChange={e => setLogForm({...logForm, labor_minutes: e.target.value})} className="input-field w-full py-4 text-center text-lg font-black" />
+                  <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-themed-muted" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-themed-muted block mb-2 font-bold uppercase tracking-tighter">Execution Notes</label>
+                <textarea value={logForm.notes} onChange={e => setLogForm({...logForm, notes: e.target.value})} className="input-field w-full text-sm" placeholder="Any observations during execution..." rows={2} />
               </div>
               
-              <button type="submit" className="btn-primary w-full py-3 mt-4 justify-center bg-emerald-600 hover:bg-emerald-500">Confirm & Complete Task</button>
+              <button type="submit" className="btn-primary w-full py-5 mt-4 justify-center bg-emerald-600 hover:bg-emerald-500 text-base shadow-xl shadow-emerald-500/20 border-0">
+                <CheckCircle2 size={20} /> Confirm & Mark Completed
+              </button>
             </form>
           </div>
         </div>
