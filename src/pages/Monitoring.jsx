@@ -71,6 +71,7 @@ const mapToDBCategory = (cat) => {
 function Monitoring() {
   const [plots, setPlots] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [trays, setTrays] = useState([]);
   const [crops, setCrops] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [openIssues, setOpenIssues] = useState([]);
@@ -115,7 +116,7 @@ function Monitoring() {
       .filter(p => p.status === 'Active')
       .map(p => ({ 
         id: p.plot_id || p.id, 
-        label: `${p.plot_code} (${getCropName(p.crop_id)})`, 
+        label: `🌿 ${p.plot_code} (${getCropName(p.crop_id)})`, 
         type: 'plot',
         crop_id: p.crop_id,
         start_date: p.sowing_date 
@@ -123,12 +124,21 @@ function Monitoring() {
     const batchTargets = batches
       .map(b => ({ 
         id: b.batch_id || b.id, 
-        label: `${b.batch_code} (${getCropName(b.crop_id)})`, 
+        label: `🪴 ${b.batch_code} (${getCropName(b.crop_id)})`, 
         type: 'batch',
         crop_id: b.crop_id,
         start_date: b.start_date
       }));
-    return [...plotTargets, ...batchTargets];
+    const trayTargets = trays
+      .filter(t => !['Transplanted', 'Completed', 'Archived'].includes(t.status))
+      .map(t => ({
+        id: t.tray_id || t.id,
+        label: `🌱 ${t.tray_code} — ${t.status} (${getCropName(t.crop_id)})`,
+        type: 'tray',
+        crop_id: t.crop_id,
+        start_date: t.sowing_date
+      }));
+    return [...plotTargets, ...batchTargets, ...trayTargets];
   };
 
   const allTargets = getAllTargets();
@@ -138,9 +148,10 @@ function Monitoring() {
 
   const load = async () => {
     try {
-      const [plotsData, batchesData, cropsData, invData, consumableData] = await Promise.all([
+      const [plotsData, batchesData, traysData, cropsData, invData, consumableData] = await Promise.all([
         db.getAll('plots'),
         db.getAll('batches'),
+        db.getAll('trays'),
         db.getAll('crops'),
         db.getAll('inventory'),
         db.getAll('inputs_inventory'),
@@ -148,6 +159,7 @@ function Monitoring() {
 
       setPlots(plotsData || []);
       setBatches((batchesData || []).filter(b => b.status === 'Nursery'));
+      setTrays(traysData || []);
       setCrops(cropsData || []);
       setInventory(invData || []);
       setConsumables(consumableData || []);
@@ -157,7 +169,8 @@ function Monitoring() {
         const [sessData, issuesData, alertsData] = await Promise.all([
           supabase.from('monitoring_sessions').select('*').order('created_at', { ascending: false }).limit(20),
           supabase.from('flagged_issues').select('*').eq('status', 'Open'),
-          supabase.from('preventive_alerts').select('*').eq('dismissed', false)
+          // v3.3: use alert_status instead of deprecated dismissed flag
+          supabase.from('preventive_alerts').select('*').in('alert_status', ['New', 'Acknowledged', 'Escalated'])
         ]);
         setSessions(sessData.data || []);
         setOpenIssues(issuesData.data || []);
@@ -396,9 +409,9 @@ function Monitoring() {
     if (!resolvingIssue) return;
     try {
       await db.update('flagged_issues', resolvingIssue.flag_id || resolvingIssue.id, { 
-        status: 'Closed', 
+        status: 'Resolved', 
         resolved_date: new Date().toISOString().split('T')[0],
-        resolution_notes: `${resolutionData.action}: ${resolutionData.notes}`
+        description: `RESOLVED: ${resolutionData.action} — ${resolutionData.notes}`
       });
 
       await db.insert('maintenance_logs', {
@@ -462,13 +475,13 @@ function Monitoring() {
             session_id: session.session_id,
             target_type: tc.type,
             target_id: tc.id,
-            crop_id: tc.crop_id,
+            // crop_id is NOT a column in flagged_issues — removed to fix 400
             issue_type: mapToDBCategory(tc.diagnosticCategory),
             threat_category: mapToDBCategory(tc.diagnosticCategory),
             specific_symptom: tc.diagnosticSymptom,
             is_active_threat: true,
             severity,
-            description: `DIAGNOSIS: ${tc.diagnosticSymptom} | ${tc.name} flagged during ${sessionType}`,
+            description: `DIAGNOSIS: ${tc.diagnosticSymptom} | ${tc.name} (${getCropName(tc.crop_id)}) flagged during ${sessionType}`,
             status: 'Open'
           };
           await supabase.from('flagged_issues').insert(issueRow);
@@ -550,10 +563,13 @@ function Monitoring() {
         await db.insert('tasks', {
           title: titleStr,
           due_date: new Date().toISOString().split('T')[0],
-          priority: 'High', // Forced V3.2 Requirement
+          priority: 'High',
           status: 'Pending',
           is_auto_generated: true,
-          [issue.target_type === 'plot' ? 'plot_id' : 'batch_id']: issue.target_id,
+          // Three-way FK mapping — tray issues must use tray_id, not batch_id
+          ...(issue.target_type === 'plot'  ? { plot_id:  issue.target_id } : {}),
+          ...(issue.target_type === 'batch' ? { batch_id: issue.target_id } : {}),
+          ...(issue.target_type === 'tray'  ? { tray_id:  issue.target_id } : {}),
           action_type: actionType,
           recommended_product_id: actualProduct?.input_id || null,
           recommended_dosage_value: recProduct?.dosage_value || null,
@@ -1071,10 +1087,10 @@ function Monitoring() {
               <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Tap each to inspect · {targetChecks.length} checked</p>
             </div>
 
-            {(plots.filter(p => p.status === 'Active').length === 0 && batches.length === 0) ? (
+            {(plots.filter(p => p.status === 'Active').length === 0 && batches.length === 0 && trays.filter(t => !['Transplanted','Completed','Archived'].includes(t.status)).length === 0) ? (
               <div className="glass-card-static p-8 text-center">
                 <Leaf size={32} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No active plots or nursery batches.</p>
+                <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No active plots, batches, or trays found.</p>
               </div>
             ) : (
               <>
@@ -1157,6 +1173,54 @@ function Monitoring() {
                     </button>
                   );
                 })}
+
+                {/* ── PROPAGATION TRAYS ── */}
+                {(() => {
+                  const activeTrays = trays.filter(t => !['Transplanted', 'Completed', 'Archived'].includes(t.status));
+                  if (activeTrays.length === 0) return null;
+                  return (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-widest mt-4" style={{ color: 'var(--color-text-muted)' }}>Propagation Trays</p>
+                      {activeTrays.map(tray => {
+                        const checked = targetChecks.find(tc => tc.id === tray.tray_id);
+                        const hasFlagged = checked && checked.diagnosticCategory && checked.diagnosticCategory !== 'None';
+                        return (
+                          <button key={tray.tray_id} onClick={() => {
+                            if (!checked) {
+                              setSelectedTarget({
+                                type: 'tray',
+                                id: tray.tray_id,
+                                name: tray.tray_code,
+                                crop_id: tray.crop_id,
+                                start_date: tray.sowing_date
+                              });
+                              setTargetAnswers({});
+                            }
+                          }} className="glass-card w-full p-4 text-left flex items-center gap-4 active:scale-[0.99] transition-transform">
+                            <div className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+                              style={{ background: checked ? (hasFlagged ? '#ef444420' : '#10b98120') : 'var(--color-bg-card)' }}>
+                              {checked ? (hasFlagged ? <AlertTriangle size={20} style={{ color: '#ef4444' }} /> : <Check size={20} style={{ color: '#10b981' }} />) : <Sprout size={20} style={{ color: 'var(--color-text-muted)' }} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>{tray.tray_code}</p>
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold" style={{ background: '#a78bfa20', color: '#a78bfa' }}>Tray · {tray.status}</span>
+                              </div>
+                              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{getCropName(tray.crop_id)} · Day {Math.floor((new Date() - new Date(tray.sowing_date)) / 86400000)}</p>
+                            </div>
+                            {checked
+                              ? <span className="text-[10px] px-2 py-1 rounded-full font-bold" style={{ background: hasFlagged ? '#ef444420' : '#10b98120', color: hasFlagged ? '#ef4444' : '#10b981' }}>
+                                {hasFlagged ? 'Flagged' : 'Done ✓'}
+                              </span>
+                              : <ChevronRight size={16} style={{ color: 'var(--color-text-muted)' }} />
+                            }
+                          </button>
+                        );
+                      })}
+                    </>
+                  );
+                })()}
+
               </>
             )}
           </div>
@@ -1177,9 +1241,7 @@ function Monitoring() {
             </button>
           )}
           {step === 'scan' && (
-            sessionType === 'Daily Scan'
-              ? <button onClick={saveSession} className="btn-primary flex-[2] !py-3.5 !rounded-2xl text-sm">Complete Scan ✓</button>
-              : <button onClick={() => setStep('targets')} className="btn-primary flex-[2] !py-3.5 !rounded-2xl text-sm">Next: Crop Checks →</button>
+            <button onClick={() => setStep('targets')} className="btn-primary flex-[2] !py-3.5 !rounded-2xl text-sm">Next: Crop Checks →</button>
           )}
           {step === 'targets' && (
             <button onClick={saveSession} className="flex-[2] py-3.5 rounded-2xl text-sm font-bold text-white" style={{ background: '#10b981' }}>
