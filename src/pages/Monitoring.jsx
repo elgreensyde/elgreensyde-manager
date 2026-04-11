@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   Eye, ClipboardCheck, AlertTriangle, Check, X, Leaf, Bug, Droplets,
-  Beaker, History, ChevronRight, Sprout, Zap, FlaskConical, Plus, Clock, Search
+  Beaker, History, ChevronRight, Sprout, Zap, FlaskConical, Plus, Clock, Search,
+  Box, AlertCircle, Activity, RefreshCw
 } from 'lucide-react';
 
 import toast from 'react-hot-toast';
@@ -34,10 +35,11 @@ const DAILY_SCAN_QUESTIONS = [
 
 const DIAGNOSTIC_TREE = {
   'None': [],
-  'Invertebrate Pests': ['Aphids/Honeydew', 'Whiteflies', 'Root-Knot Nematodes'],
-  'Fungal/Foliar Pathogens': ['Grey Fuzz (Downy Mildew)', 'Bacterial Leaf Spot'],
-  'Soil/Root Health': ['Sudden Wilting (Fusarium Risk)'],
-  'Nutrient Deficiency': ['Pale Leaves/Low Vigor (Nitrogen Leaching)']
+  'Invertebrate Pests': ['Aphids/Honeydew', 'Whiteflies', 'Leafminers (Serpentine)', 'Flea Beetles (Shot-holes)', 'Spider Mites (Webbing)'],
+  'Fungal/Foliar Pathogens': ['Grey Fuzz (Downy Mildew)', 'Powdery Mildew (White Patches)', 'Bacterial Leaf Spot', 'Rust (Orange Pustules)'],
+  'Soil/Root Health': ['Sudden Wilting (Fusarium Risk)', 'Root Rot/Damping Off', 'Clubroot Swelling'],
+  'Nutrient Deficiency': ['Uniform Yellowing (Nitrogen)', 'Purplish Leaves (Phosphorus)', 'Burnt Leaf Edges (Potassium)', 'Interveinal Yellowing (Mg/Fe)', 'Pale Leaves (General)'],
+  'Equipment': ['Irrigation Clog', 'Nozzle Leak', 'UV Light Failure']
 };
 
 
@@ -48,8 +50,23 @@ const QUICK_LOG_TYPES = [
   { id: 'issue', label: 'Issue Spotted', icon: AlertTriangle, color: '#f59e0b', category: null },
 ];
 
-const ISSUE_CATEGORIES = ['Pest', 'Disease', 'Irrigation', 'Equipment', 'Nutrient Deficiency', 'Other'];
+const ISSUE_CATEGORIES = ['Pest', 'Disease', 'Irrigation', 'Equipment', 'Nutrient', 'Other'];
 const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
+
+// Helper to bridge UI labels to DB check constraints
+const mapToDBCategory = (cat) => {
+  const mapping = {
+    'Invertebrate Pests': 'Pest',
+    'Fungal/Foliar Pathogens': 'Disease',
+    'Soil/Root Health': 'Disease',
+    'Nutrient Deficiency': 'Nutrient',
+    'Issue Resolution': 'Maintenance',
+    'Equipment Status': 'Equipment',
+    'Pest Treatment': 'Pest Treatment',
+    'Fertilize': 'Fertilize'
+  };
+  return mapping[cat] || cat;
+};
 
 function Monitoring() {
   const [plots, setPlots] = useState([]);
@@ -143,20 +160,48 @@ function Monitoring() {
 
   const getSmartRecommendation = () => {
     if (!selectedTarget || !diagnosticCategory || !diagnosticSymptom) return null;
+    const symptom = diagnosticSymptom || '';
     const crop = crops.find(c => c.common_name === getCropName(selectedTarget.crop_id));
     if (!crop) return null;
 
     let rec = null;
     if (diagnosticCategory === 'Invertebrate Pests') {
-      rec = crop.pest_records?.find(p => diagnosticSymptom.toLowerCase().includes(p.pest.toLowerCase()) || p.pest.toLowerCase().includes(diagnosticSymptom.toLowerCase().split('/')[0]));
+      rec = crop.pest_records?.find(p => (p.pest || '').toLowerCase().includes(symptom.toLowerCase().split('/')[0]) || symptom.toLowerCase().includes((p.pest || '').toLowerCase()));
     } else if (diagnosticCategory === 'Fungal/Foliar Pathogens' || diagnosticCategory === 'Soil/Root Health') {
-      rec = crop.disease_records?.find(d => diagnosticSymptom.toLowerCase().includes(d.disease.toLowerCase()) || d.disease.toLowerCase().includes(diagnosticSymptom.toLowerCase().split(' (')[0]));
+      rec = crop.disease_records?.find(d => (d.disease || '').toLowerCase().includes(symptom.toLowerCase().split(' (')[0]) || symptom.toLowerCase().includes((d.disease || '').toLowerCase()));
+    } else if (diagnosticCategory === 'Nutrient Deficiency') {
+      // Basic logic for Nutrient mapping
+      if (symptom.includes('Nitrogen')) {
+        rec = { recommended_action: { target_product_name: 'Urea (46-0-0)', dosage_value: '2.5-5', dosage_unit: 'g/L', notes: 'High nitrogen boost for vegetative growth. Apply 2.5-5g/L.' }, issueName: 'Nitrogen Deficiency' };
+      } else if (symptom.includes('Phosphorus') || symptom.includes('Potassium')) {
+        rec = { recommended_action: { target_product_name: 'Complete Fertilizer (14-14-14)', dosage_value: '10', dosage_unit: 'g/pot', notes: 'Balanced NPK for root and structural health. Apply 10g per pot or 50g/sqm.' }, issueName: 'NPK Imbalance' };
+      } else {
+        rec = { recommended_action: { target_product_name: 'Vermicast', dosage_value: '100', dosage_unit: 'g/pot', notes: 'Apply 100g top-dress for balanced organic micronutrients and soil health.' }, issueName: 'Micronutrient Deficiency' };
+      }
     }
 
     if (!rec || !rec.recommended_action) return null;
 
-    const product = consumables.find(c => c.product_name === rec.recommended_action.target_product_name);
-    return { ...rec.recommended_action, product, issueName: rec.pest || rec.disease };
+    const primaryProductName = rec.recommended_action.target_product_name;
+    const product = consumables.find(c => c.product_name === primaryProductName);
+    
+    // Alternative Logic
+    let alternative = null;
+    if (!product || product.current_stock <= 0) {
+      if (primaryProductName === 'Neem Oil') {
+        alternative = consumables.find(c => c.product_name === 'Insecticidal Soap' && c.current_stock > 0);
+      } else if (primaryProductName?.includes('Urea')) {
+        alternative = consumables.find(c => c.product_name?.includes('Complete') && c.current_stock > 0);
+      }
+    }
+
+    return { 
+       ...rec.recommended_action, 
+       product, 
+       alternative,
+       issueName: rec.pest || rec.disease || rec.issueName,
+       isAvailable: product && product.current_stock > 0
+    };
   };
 
   useEffect(() => { load(); }, []);
@@ -185,7 +230,7 @@ function Monitoring() {
           return db.rpc('report_issue_with_task', {
             p_target_type: target.type,
             p_target_id: targetId,
-            p_issue_category: quickLogForm.issue_category,
+            p_issue_category: mapToDBCategory(quickLogForm.issue_category),
             p_description: quickLogForm.notes,
             p_severity: quickLogForm.severity
           });
@@ -201,7 +246,7 @@ function Monitoring() {
 
         // Atomically log maintenance and deduct inventory
         await db.rpc('log_maintenance_with_deduction', {
-          p_action_category: quickLogType.category || 'Maintenance',
+          p_action_category: mapToDBCategory(quickLogType.category || 'Maintenance'),
           p_target_ids: quickLogForm.target_ids,
           p_input_id: quickLogForm.input_id,
           p_dosage_rate: quickLogForm.dosage_rate || 'N/A',
@@ -315,8 +360,8 @@ function Monitoring() {
 
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
-        action_category: 'Issue Resolution',
-        method_product: resolutionData.action, // Fixed NOT NULL constraint
+        action_category: 'Maintenance',
+        method_product: resolutionData.action, 
         target_ids: [resolvingIssue.target_id],
         notes: `FIXED: ${resolvingIssue.issue_type} - ${resolutionData.action}. ${resolutionData.notes}`
       });
@@ -375,8 +420,8 @@ function Monitoring() {
             target_type: tc.type,
             target_id: tc.id,
             crop_id: tc.crop_id,
-            issue_type: tc.diagnosticCategory,
-            threat_category: tc.diagnosticCategory,
+            issue_type: mapToDBCategory(tc.diagnosticCategory),
+            threat_category: mapToDBCategory(tc.diagnosticCategory),
             specific_symptom: tc.diagnosticSymptom,
             is_active_threat: true,
             severity,
@@ -394,7 +439,7 @@ function Monitoring() {
         toast('⚠️ Multiple targets diagnosed — check nursery-wide conditions!', { icon: '🔍', duration: 6000 });
         await supabase.from('flagged_issues').insert({
           session_id: session.session_id,
-          issue_type: 'Environmental',
+          issue_type: 'Other',
           description: `CROSS-ZONE PATTERN: ${diagnosedIssueCount} targets flagged with health issues. Check humidity/ventilation.`,
           severity: 'High',
           status: 'Open'
@@ -1159,17 +1204,31 @@ function Monitoring() {
                           </div>
                           <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                             <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter mb-1">Inventory Check</p>
-                            <p className={`text-sm font-bold flex items-center gap-2 ${hasStock ? 'text-emerald-500' : 'text-red-500'}`}>
+                            <p className={`text-sm font-bold flex items-center gap-2 ${smartRec.isAvailable ? 'text-emerald-500' : 'text-red-500 animate-pulse'}`}>
                               <Droplets size={14} />
-                              {hasStock ? `${smartRec.product.current_stock} ${smartRec.product.stock_unit} Available` : 'OUT OF STOCK'}
+                              {smartRec.isAvailable ? `${smartRec.product.current_stock} ${smartRec.product.stock_unit} Available` : 'OUT OF STOCK'}
                             </p>
                           </div>
                         </div>
 
+                        {!smartRec.isAvailable && smartRec.alternative && (
+                          <div className="mx-0 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-700">
+                             <div className="flex items-center gap-2 mb-2">
+                               <RefreshCw size={12} className="text-amber-600 animate-spin-slow" />
+                               <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Intelligent Alternative Found</p>
+                             </div>
+                             <div className="flex justify-between items-center">
+                               <p className="text-sm font-bold text-amber-700">{smartRec.alternative.product_name}</p>
+                               <span className="text-[10px] font-black bg-amber-500/20 text-amber-700 px-2 py-0.5 rounded-full">{smartRec.alternative.current_stock} {smartRec.alternative.stock_unit}</span>
+                             </div>
+                             <p className="text-[9px] text-amber-600/70 mt-1">Substitute found in Farm Consumables. dosage may vary.</p>
+                          </div>
+                        )}
+
                         <div className="flex items-center justify-between p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
                           <div>
                             <p className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Dosage Window</p>
-                            <p className="text-lg font-black text-themed-primary">{smartRec.dosage_value}{smartRec.dosage_unit}</p>
+                            <p className="text-lg font-black text-themed-primary">{smartRec.dosage_value || '—'}{smartRec.dosage_unit || ''}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-[9px] font-black text-themed-muted uppercase tracking-tighter">Withholding Period</p>

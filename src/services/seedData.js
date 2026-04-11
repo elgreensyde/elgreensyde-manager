@@ -23,14 +23,14 @@ const CUST_WALKIN = {
 
 export async function initializeSeedData() {
   try {
-    // Seed crop library (20 crops from Doc2)
-    await seedCropLibrary();
+    // Seed crop library (22 crops now)
+    try { await seedCropLibrary(); } catch(e) { console.warn('Crop library seed skipped:', e.message); }
 
-    // Seed inputs inventory (5 confirmed products)
-    await seedInputsInventory();
+    // Seed inputs inventory (6 products)
+    try { await seedInputsInventory(); } catch(e) { console.warn('Inputs inventory seed skipped:', e.message); }
 
     // Seed recommendation records (Doc2)
-    await seedRecommendations();
+    try { await seedRecommendations(); } catch(e) { console.warn('Recommendations seed skipped (RLS?):', e.message); }
 
     // Seed Walk-in Customer Profile
     try {

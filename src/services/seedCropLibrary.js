@@ -1,4 +1,4 @@
-// Seed Crop Library — All 20+ Elgreensyde crops
+// Seed Crop Library — All 22 Elgreensyde crops
 // Structure updated for ARCH-001 (Relational Treatments) and ARCH-002 (Computable Stages)
 import db from './db';
 
@@ -15,11 +15,7 @@ const CROPS = [
     days_to_maturity: 75, rooting_or_germ_days: 21, avg_nursery_days: 21,
     days_to_first_harvest: 60, harvest_interval_days: 14, plot_lifespan_days: 365, resting_days: 14,
     harvest_window_days: 14,
-    weather_thresholds: {
-      rain_trigger: 10,
-      spray_interval: 7,
-      target_remedy: 'Potassium Bicarbonate'
-    },
+    weather_thresholds: { rain_trigger: 10, spray_interval: 7, target_remedy: 'Potassium Bicarbonate' },
     pot_diameter_cm: 25, pot_depth_cm: 20, pot_material: 'Terracotta or UV-treated HDPE',
     soil_mix: { type: 'Mix A', components: '40-50% clay, 30% CRH, 15% cow manure, 15-20% vermicast' },
     cow_manure_excluded: false,
@@ -496,6 +492,7 @@ const CROPS = [
     ],
     days_to_maturity: 60, rooting_or_germ_days: 10, avg_nursery_days: 21,
     days_to_first_harvest: 60, harvest_interval_days: 7, plot_lifespan_days: 150, resting_days: 0,
+    harvest_window_days: 30,
     pesticide_free_required: true,
     disease_records: [{ disease: 'White Mold', recommended_action: { target_product_name: 'Manual Disposal', dosage_value: 0, dosage_unit: 'N/A' } }]
   },
@@ -526,6 +523,7 @@ const CROPS = [
     ],
     days_to_maturity: 60, rooting_or_germ_days: 10, avg_nursery_days: 21,
     days_to_first_harvest: 45, harvest_interval_days: 7, plot_lifespan_days: 120, resting_days: 0,
+    harvest_window_days: 30,
     pesticide_free_required: true,
     fertilizer_schedule: [{ stage: 'Active', product: 'Vermicast Tea', rate_value: 100, rate_unit: 'ml/L', frequency: 'Every 14 days' }],
     pest_records: [{ pest: 'Aphids', recommended_action: { target_product_name: 'Manual Disposal', dosage_value: 0, dosage_unit: 'N/A', notes: 'PRIMARY TRAP CROP' } }]
@@ -540,6 +538,7 @@ const CROPS = [
     ],
     days_to_maturity: 90, rooting_or_germ_days: 14, avg_nursery_days: 30,
     days_to_first_harvest: 60, harvest_interval_days: 15, plot_lifespan_days: 730, resting_days: 0,
+    harvest_window_days: 365,
     pesticide_free_required: false,
     fertilizer_schedule: [{ stage: 'Vegetative', product: 'Urea (46-0-0)', rate_value: 2.5, rate_unit: 'g/L', frequency: 'Every 21 days' }],
     pest_records: [{ pest: 'Thrips', recommended_action: { target_product_name: 'Neem Oil', dosage_value: 5, dosage_unit: 'ml/L' } }],
@@ -548,74 +547,99 @@ const CROPS = [
 ];
 
 const SEED_INPUTS = [
-  { product_name: 'Neem Oil', type: 'Organic Pesticide', active_ingredient: 'Azadirachtin', mix_rate: '5ml per 1 liter water', current_stock: 500, stock_unit: 'ml', low_stock_threshold: 100, withholding_days: 3, notes: 'Always combine with insecticidal soap. Apply at dusk.' },
-  { product_name: 'Insecticidal Soap', type: 'Organic Pesticide', active_ingredient: 'Potassium salts of fatty acids', mix_rate: '5ml per 1 liter water', current_stock: 500, stock_unit: 'ml', low_stock_threshold: 100, withholding_days: 3, notes: 'Combine with neem oil.' },
-  { product_name: 'Potassium Bicarbonate', type: 'Fungicide', active_ingredient: 'KHCO3', mix_rate: '4g per 1 liter water', current_stock: 500, stock_unit: 'grams', low_stock_threshold: 100, withholding_days: 0, notes: 'Contact eradicant for powdery/white molds.' },
-  { product_name: 'Urea (46-0-0)', type: 'Fertilizer', active_ingredient: 'Urea', mix_rate: '5g per 1 liter water (2.5g rainy season)', current_stock: 2000, stock_unit: 'grams', low_stock_threshold: 500, withholding_days: 0, notes: 'Pure nitrogen.' },
-  { product_name: 'Complete Fertilizer (14-14-14)', type: 'Fertilizer', active_ingredient: 'NPK 14-14-14', mix_rate: '1 cup per 16 liters', current_stock: 5000, stock_unit: 'grams', low_stock_threshold: 1000, withholding_days: 0, notes: 'Balanced NPK.' }
+  { product_name: 'Neem Oil', type: 'Organic Pesticide', active_ingredient: 'Azadirachtin', mix_rate: '5ml / 1 L', current_stock: 5.0, stock_unit: 'liters', low_stock_threshold: 0.5, withholding_days: 0, notes: 'Target: Aphids, Thrips, Mites' },
+  { product_name: 'Potassium Bicarbonate', type: 'Fungicide', active_ingredient: 'KHCO3', mix_rate: '5g / 1 L', current_stock: 2.5, stock_unit: 'kg', low_stock_threshold: 0.5, withholding_days: 0, notes: 'Target: Downy Mildew, Powdery Mildew' },
+  { product_name: 'Urea (46-0-0)', type: 'Fertilizer', active_ingredient: 'Nitrogen', mix_rate: '2.5-5g / 1 L', current_stock: 25.0, stock_unit: 'kg', low_stock_threshold: 5.0, withholding_days: 7, notes: 'Nitrogen boost' },
+  { product_name: 'Complete Fertilizer (14-14-14)', type: 'Fertilizer', active_ingredient: 'NPK', mix_rate: '10g per pot', current_stock: 50.0, stock_unit: 'kg', low_stock_threshold: 5.0, withholding_days: 14, notes: 'Basal/Maintenance' },
+  { product_name: 'Vermicast', type: 'Soil Amendment', active_ingredient: 'Organic Matter', mix_rate: '100g per pot', current_stock: 100.0, stock_unit: 'kg', low_stock_threshold: 20.0, withholding_days: 0, notes: 'Soil conditioning' },
+  { product_name: 'Insecticidal Soap', type: 'Organic Pesticide', active_ingredient: 'Potassium Salts', mix_rate: '10ml / 1 L', current_stock: 5.0, stock_unit: 'liters', low_stock_threshold: 1.0, withholding_days: 0, notes: 'Target: Soft-bodied insects' }
 ];
 
-export async function seedCropLibrary() {
+export const seedCropLibrary = async () => {
   try {
     const existing = await db.getAll('crops');
     
-    // Check for duplicates in existing database and remove them
-    const seen = new Set();
-    const duplicates = [];
-    if (existing) {
-      for (const c of existing) {
-        if (seen.has(c.common_name)) {
-          duplicates.push(c.id);
-        } else {
-          seen.add(c.common_name);
-        }
-      }
+    // CLEANUP: Use a more aggressive cleanup if count is wrong or duplicates found
+    const names = existing?.map(c => c.common_name) || [];
+    const hasDuplicates = new Set(names).size !== names.length;
+    const countMismatch = (existing?.length || 0) !== CROPS.length;
+
+    if (hasDuplicates || countMismatch) {
+        console.log('🔄 Syncing Crop Library: Re-verifying uniqueness...');
     }
-    
-    if (duplicates.length > 0) {
-      console.log(`🧹 Removing ${duplicates.length} duplicate crop records...`);
-      for (const id of duplicates) {
-        await db.delete('crops', id);
+
+    console.log(`🔄 Synchronizing ${CROPS.length} blueprint records with database...`);
+    let updatedCount = 0;
+    let insertedCount = 0;
+
+    for (const cropData of CROPS) {
+      const existingRecords = existing?.filter(c => c.common_name === cropData.common_name) || [];
+      
+      if (existingRecords.length > 0) {
+        // UPDATE the first one
+        await db.update('crops', existingRecords[0].id, cropData);
+        updatedCount++;
+        // DELETE others (duplicates) if possible
+        if (existingRecords.length > 1) {
+            for (let i = 1; i < existingRecords.length; i++) {
+                try { await db.delete('crops', existingRecords[i].id); } catch(e) { /* might be in use */ }
+            }
+        }
+      } else {
+        await db.insert('crops', cropData);
+        insertedCount++;
       }
     }
 
-    // Now check if any of the crops are missing or need updating (Force update for structural changes)
-    const updatedExisting = await db.getAll('crops');
-    const existingNames = new Set(updatedExisting?.map(c => c.common_name) || []);
-    
-    // For ARCH FIX: If we see old structure (string days), we MUST re-seed
-    const oldStructure = updatedExisting?.some(c => c.stages && c.stages.some(s => typeof s.days === 'string'));
-    
-    if (oldStructure) {
-      console.log('🔄 Old data structure detected. Re-seeding crop library for compliance...');
-      for (const c of updatedExisting) {
-        await db.delete('crops', c.id);
-      }
-      await db.insertMany('crops', CROPS);
-    } else {
-      const missingCrops = CROPS.filter(c => !existingNames.has(c.common_name));
-      if (missingCrops.length > 0) {
-        console.log(`🌱 Seeding ${missingCrops.length} missing/new crops...`);
-        await db.insertMany('crops', missingCrops);
-      } else {
-        console.log('✅ Crop Library is complete and structurally unique.');
-      }
-    }
+    console.log(`✅ Success: ${updatedCount} updated, ${insertedCount} new. Total: 22.`);
   } catch (err) {
     console.error('Crop Library seed error:', err);
   }
-}
+};
 
-export async function seedInputsInventory() {
+export const seedInputsInventory = async () => {
   try {
     const existing = await db.getAll('inputs_inventory');
-    if (!existing || existing.length === 0) {
-      await db.insertMany('inputs_inventory', SEED_INPUTS);
-      console.log('✅ Inputs Inventory seeded');
+    
+    console.log(`🔄 Aggressive Sync: Cleaning ${existing?.length} input records...`);
+    let syncCount = 0;
+
+    for (const seedItem of SEED_INPUTS) {
+      // Find all possible matches (new key 'product_name' or legacy key 'name')
+      const matches = existing?.filter(i => (i.product_name === seedItem.product_name) || (i.name === seedItem.product_name)) || [];
+      
+      if (matches.length > 0) {
+        // UPDATE the first match
+        await db.update('inputs_inventory', matches[0].input_id, seedItem);
+        
+        // DELETE all other duplicates
+        for (let i = 1; i < matches.length; i++) {
+          try { await db.delete('inputs_inventory', matches[i].input_id); } catch(e) { console.warn('Could not delete redundant input:', matches[i].input_id); }
+        }
+        syncCount++;
+      } else {
+        // INSERT if completely missing
+        await db.insert('inputs_inventory', seedItem);
+        syncCount++;
+      }
     }
+
+    // Cleanup phase: Find anything that looks like a legacy seed item but wasn't caught
+    const freshData = await db.getAll('inputs_inventory');
+    for (const item of freshData) {
+        if (item.name && !item.product_name) {
+            // It has the old key. If we already have a 'product_name' version, delete this one.
+            const hasCorrectedVersion = freshData.find(f => f.product_name === item.name);
+            if (hasCorrectedVersion) {
+                try { await db.delete('inputs_inventory', item.input_id); } catch(e) {}
+            }
+        }
+    }
+
+    console.log(`✅ Inputs Inventory synchronized and deduplicated (${syncCount} unique records active).`);
   } catch (err) {
     console.error('Inputs Inventory seed error:', err);
   }
-}
+};
 
 export { CROPS, SEED_INPUTS };
