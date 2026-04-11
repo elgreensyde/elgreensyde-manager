@@ -147,17 +147,25 @@ function Batches() {
   };
 
   /**
-   * FEAT-019/027: Growth Stage Calculation
+   * FEAT-019/027: Robust Lifecycle Logic
    */
-  const getGrowthStage = (entity, startDate) => {
+  const getGrowthStage = (entity, startDateStr) => {
     const crop = getCrop(entity.crop_id);
-    if (!crop || !crop.stages || !startDate) return null;
+    if (!crop || !crop.stages || !startDateStr) return { name: 'Unknown' };
     
-    const daysIn = Math.floor((new Date() - parseDateInternal(startDate)) / (1000 * 60 * 60 * 24));
+    const startDate = parseDateInternal(startDateStr);
+    if (!startDate || isNaN(startDate.getTime())) return { name: 'Unknown' };
+
+    const diff = new Date() - startDate;
+    const daysIn = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
     
-    // Find matching stage
     const currentStage = crop.stages.find(s => daysIn >= s.start_day && daysIn <= s.end_day);
-    return currentStage || crop.stages[crop.stages.length - 1]; // Default to last stage
+    if (currentStage) return currentStage;
+
+    const maxDay = Math.max(...crop.stages.map(s => s.end_day));
+    if (daysIn > maxDay) return crop.stages[crop.stages.length - 1];
+
+    return { name: 'Unknown' };
   };
 
   // Filtered lists
@@ -614,9 +622,15 @@ function Batches() {
                         <span className="text-xs font-mono text-themed-muted">{tray.tray_code}</span>
                         {(() => {
                           const stage = getGrowthStage(tray, tray.sowing_date);
-                          if (!stage || tray.status === 'Completed') return null;
+                          if (!stage || !stage.name || tray.status === 'Completed') return null;
+                          const isUnknown = stage.name === 'Unknown';
+                          const isRepro = stage.name.includes('Reproductive');
                           return (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 'bg-white/10 text-themed-muted'}`}>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${
+                              isUnknown ? 'bg-black/20 text-themed-muted border border-themed-border' :
+                              isRepro ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 
+                              'bg-white/10 text-themed-muted'
+                            }`}>
                               {stage.name}
                             </span>
                           );
@@ -850,9 +864,15 @@ function Batches() {
                         <span className="text-xs font-mono text-themed-muted">{batch.batch_code}</span>
                         {(() => {
                           const stage = getGrowthStage(batch, batch.start_date);
-                          if (!stage || batch.status === 'Completed') return null;
+                          if (!stage || !stage.name || batch.status === 'Completed') return null;
+                          const isUnknown = stage.name === 'Unknown';
+                          const isRepro = stage.name.includes('Reproductive');
                           return (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 'bg-white/10 text-themed-muted'}`}>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase tracking-widest ${
+                              isUnknown ? 'bg-black/20 text-themed-muted border border-themed-border' :
+                              isRepro ? 'bg-amber-500/20 text-amber-500 animate-pulse' : 
+                              'bg-white/10 text-themed-muted'
+                            }`}>
                               {stage.name}
                             </span>
                           );

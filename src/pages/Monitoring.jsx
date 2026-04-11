@@ -171,11 +171,34 @@ function Monitoring() {
     setLoading(false);
   };
 
+  /**
+   * FEAT-019/027: Robust Lifecycle Logic
+   */
+  const parseDateInternal = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return null;
+    const [y, m, d] = parts.map(Number);
+    return new Date(y, m - 1, d);
+  };
+
   const getGrowthStage = (entity) => {
     const crop = crops.find(c => c.id === entity.crop_id);
-    if (!crop || !crop.stages || !entity.start_date) return null;
-    const daysIn = Math.floor((new Date() - new Date(entity.start_date)) / (1000 * 60 * 60 * 24));
-    return crop.stages.find(s => daysIn >= s.start_day && daysIn <= s.end_day) || crop.stages[crop.stages.length - 1];
+    if (!crop || !crop.stages || !entity.start_date) return { name: 'Unknown' };
+    
+    const startDate = parseDateInternal(entity.start_date);
+    if (!startDate || isNaN(startDate.getTime())) return { name: 'Unknown' };
+
+    const diff = new Date() - startDate;
+    const daysIn = Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+    
+    const currentStage = crop.stages.find(s => daysIn >= s.start_day && daysIn <= s.end_day);
+    if (currentStage) return currentStage;
+
+    const maxDay = Math.max(...crop.stages.map(s => s.end_day));
+    if (daysIn > maxDay) return crop.stages[crop.stages.length - 1];
+
+    return { name: 'Unknown' };
   };
 
   const getSmartRecommendation = () => {
@@ -372,11 +395,11 @@ function Monitoring() {
   const submitResolution = async () => {
     if (!resolvingIssue) return;
     try {
-      await supabase.from('flagged_issues').update({ 
+      await db.update('flagged_issues', resolvingIssue.flag_id || resolvingIssue.id, { 
         status: 'Closed', 
         resolved_date: new Date().toISOString().split('T')[0],
         resolution_notes: `${resolutionData.action}: ${resolutionData.notes}`
-      }).or(`flag_id.eq.${resolvingIssue.flag_id || resolvingIssue.id},id.eq.${resolvingIssue.flag_id || resolvingIssue.id}`);
+      });
 
       await db.insert('maintenance_logs', {
         event_date: new Date().toISOString().split('T')[0],
@@ -1218,9 +1241,16 @@ function Monitoring() {
                   <h2 className="text-lg font-bold" style={{ color: 'var(--color-text-heading)' }}>{selectedTarget.name}</h2>
                   {(() => {
                     const stage = getGrowthStage(selectedTarget);
-                    if (!stage) return null;
+                    if (!stage || !stage.name) return null;
+                    const isUnknown = stage.name === 'Unknown';
+                    const isRepro = stage.name.includes('Reproductive');
+                    
                     return (
-                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${stage.name.includes('Reproductive') ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${
+                        isUnknown ? 'bg-black/20 text-themed-muted border border-themed-border' :
+                        isRepro ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 
+                        'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                      }`}>
                         {stage.name}
                       </span>
                     );

@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { LayoutGrid, Sprout, ShieldAlert, X, Ruler, Maximize2, Move, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { db } from '../services/db';
 
 function BedVisualizer({ isOpen, onClose }) {
   const [targetCount, setTargetCount] = useState(32);
@@ -16,27 +18,72 @@ function BedVisualizer({ isOpen, onClose }) {
     return (intraRowSpacing < MATURE_CANOPY_DIAMETER) || (interRowSpacing < MATURE_CANOPY_DIAMETER);
   }, [intraRowSpacing, interRowSpacing]);
 
-  // Calculation Logic
-  const sideBuffer = 4; 
-  const endBuffer = 6; 
-  
-  const effectiveWidth = Math.max(0, bedWidth - (sideBuffer * 2));
-  const rows = Math.max(1, Math.floor(effectiveWidth / interRowSpacing) + 1);
-  
-  const plantsPerRow = Math.ceil(safeTargetCount / rows);
-  const plantingLength = plantsPerRow > 1 ? (plantsPerRow - 1) * intraRowSpacing : 0;
-  const totalLength = plantingLength + (endBuffer * 2);
-  const lengthMeters = (totalLength * 0.0254).toFixed(2);
+  // BUG-016: Unified Memoized Calculation Engine
+  const metrics = useMemo(() => {
+    const sideBuffer = 4; 
+    const endBuffer = 6; 
+    
+    const effectiveWidth = Math.max(0, bedWidth - (sideBuffer * 2));
+    const calculatedRows = Math.max(1, Math.floor(effectiveWidth / interRowSpacing) + 1);
+    
+    const calculatedPlantsPerRow = Math.ceil(safeTargetCount / calculatedRows);
+    const plantingLength = calculatedPlantsPerRow > 1 ? (calculatedPlantsPerRow - 1) * intraRowSpacing : 0;
+    const totalLength = plantingLength + (endBuffer * 2);
+    const lengthMeters = (totalLength * 0.0254).toFixed(2);
 
-  // BUG-011: Scaling Logic
-  // Calculate a scale factor to fit the bed into a reasonable visual space (max ~800px display)
-  const basePixelWidth = 800;
-  const pixelsPerInch = Math.min(10, basePixelWidth / Math.max(totalLength, 36)); 
-  const iconScale = Math.max(0.4, Math.min(1, pixelsPerInch / 6)); // Scale icons down with density
+    // Scaling Logic
+    const basePixelWidth = 800;
+    const pixelsPerInch = Math.min(10, basePixelWidth / Math.max(totalLength, 36)); 
+    const iconScale = Math.max(0.4, Math.min(1, pixelsPerInch / 6));
 
-  // Companion Planting Logic
-  const pullCount = Math.max(2, Math.floor(totalLength / 18));
-  const pushCount = Math.max(2, Math.floor(totalLength / 24));
+    // Companion Planting Logic
+    const pullCount = Math.max(2, Math.floor(totalLength / 18));
+    const pushCount = Math.max(2, Math.floor(totalLength / 24));
+
+    return {
+      rows: calculatedRows,
+      plantsPerRow: calculatedPlantsPerRow,
+      totalLength,
+      lengthMeters,
+      pixelsPerInch,
+      iconScale,
+      pullCount,
+      pushCount
+    };
+  }, [safeTargetCount, intraRowSpacing, interRowSpacing, bedWidth]);
+
+  const { rows, plantsPerRow, totalLength, lengthMeters, pixelsPerInch, iconScale, pullCount, pushCount } = metrics;
+
+  // BUG-017: Manual Configuration Sync
+  const handleLock = async () => {
+    try {
+      // Production Payload: Strict numeric enforcement
+      const payload = {
+        target_plant_count: parseInt(safeTargetCount),
+        intra_row_spacing_in: parseFloat(intraRowSpacing),
+        inter_row_spacing_in: parseFloat(interRowSpacing),
+        physical_bed_width_in: parseFloat(bedWidth),
+        required_length_in: parseFloat(totalLength),
+        updated_at: new Date().toISOString()
+      };
+
+      // Since we are in a solo-operator model, we update the primary zone configuration
+      // In a multi-zone future, we would pass zoneId as a prop
+      const zones = await db.getAll('zones');
+      const primaryZone = zones[0]; // Logic: Update last active or default
+      
+      if (primaryZone) {
+        await db.update('zones', primaryZone.zone_id || primaryZone.id, payload);
+        toast.success('Bed configuration locked and synced to field!');
+        onClose();
+      } else {
+        toast.error('No active zone found to lock config to.');
+      }
+    } catch (err) {
+      console.error('Lock Logic Failed:', err);
+      toast.error('Sync failed: Check database connectivity.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -220,7 +267,7 @@ function BedVisualizer({ isOpen, onClose }) {
               <span className="text-md font-bold text-themed-primary">{pullCount*2 + pushCount*2 + 4} plants</span>
             </div>
           </div>
-          <button onClick={onClose} className="btn-primary !py-4 !rounded-xl sm:!rounded-2xl text-md flex-1 sm:flex-none sm:px-12 shadow-xl shadow-emerald-500/20 active:scale-95 transition-all">
+          <button onClick={handleLock} className="btn-primary !py-4 !rounded-xl sm:!rounded-2xl text-md flex-1 sm:flex-none sm:px-12 shadow-xl shadow-emerald-500/20 active:scale-95 transition-all">
             Lock Configuration
           </button>
         </div>
