@@ -6,6 +6,7 @@ import html2canvas from 'html2canvas';
 import supabase from '../lib/supabase';
 import db from '../services/db';
 import { confirmAction } from '../services/dialogService';
+import { recordRevenueEntry } from '../services/ledgerService';
 
 const STATUS_FLOW = ['Pending', 'Confirmed', 'Packed', 'Fulfilled'];
 
@@ -82,12 +83,10 @@ function FulfillmentBoard() {
         }
 
         // Write ledger entry
-        await db.insert('financial_ledger', {
-          order_id: order.order_id,
-          entry_type: 'Revenue',
+        await recordRevenueEntry({
+          orderId: order.order_id,
           amount: order.total_amount,
           description: `Wholesale — ${order.customer_name_cache} · ${order.order_number}`,
-          entry_date: new Date().toISOString().split('T')[0]
         });
 
         toast.success(`${order.order_number} fulfilled! Ledger updated.`);

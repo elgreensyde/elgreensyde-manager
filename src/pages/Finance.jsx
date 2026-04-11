@@ -4,6 +4,7 @@ import db from '../services/db';
 import supabase from '../lib/supabase';
 import toast from 'react-hot-toast';
 import { confirmAction } from '../services/dialogService';
+import { LEDGER_ENTRY_TYPES, getTodayDateString } from '../services/ledgerService';
 
 const EXPENSE_CATEGORIES = ['Seeds', 'Fertilizers', 'Packaging', 'Equipment', 'Utilities', 'Labor', 'Transport', 'Miscellaneous'];
 
@@ -22,7 +23,7 @@ function Finance() {
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [loading, setLoading] = useState(true);
   
-  const [form, setForm] = useState({ entry_date: new Date().toISOString().split('T')[0], category: 'Miscellaneous', description: '', amount: '' });
+  const [form, setForm] = useState({ entry_date: getTodayDateString(), category: 'Miscellaneous', description: '', amount: '' });
 
   const load = async () => {
     try {
@@ -109,21 +110,21 @@ function Finance() {
   }, [batches, crops, pricing]);
 
   // PANEL A: Cash P&L Calcs
-  const totalRevenue = filteredLedger.filter(l => l.entry_type === 'Revenue').reduce((sum, e) => sum + parseFloat(e.amount), 0);
-  const totalExpenses = filteredLedger.filter(l => l.entry_type === 'Direct Expense').reduce((sum, e) => sum + parseFloat(e.amount), 0);
+  const totalRevenue = filteredLedger.filter(l => l.entry_type === LEDGER_ENTRY_TYPES.REVENUE).reduce((sum, e) => sum + parseFloat(e.amount), 0);
+  const totalExpenses = filteredLedger.filter(l => l.entry_type === LEDGER_ENTRY_TYPES.DIRECT_EXPENSE).reduce((sum, e) => sum + parseFloat(e.amount), 0);
   const netCash = totalRevenue - totalExpenses;
 
   const handleSubmit = async (e) => { 
     e.preventDefault(); 
     await db.insert('financial_ledger', { 
-      entry_type: 'Direct Expense', 
+      entry_type: LEDGER_ENTRY_TYPES.DIRECT_EXPENSE, 
       amount: parseFloat(form.amount) || 0, 
       description: `${form.category} - ${form.description}`,
       entry_date: form.entry_date
     }); 
     toast.success('Expense recorded!');
     setShowExpenseForm(false); 
-    setForm({ entry_date: new Date().toISOString().split('T')[0], category: 'Miscellaneous', description: '', amount: '' }); 
+    setForm({ entry_date: getTodayDateString(), category: 'Miscellaneous', description: '', amount: '' }); 
     load(); 
   };
 
@@ -207,8 +208,8 @@ function Finance() {
                     <p className="text-[10px] font-medium" style={{ color: 'var(--color-text-muted)' }}>{tx.entry_date?.split('T')[0]}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={`text-sm font-bold ${tx.entry_type === 'Revenue' ? 'text-green-500' : 'text-red-500'}`}>
-                      {tx.entry_type === 'Revenue' ? '+' : '-'}{fmt(tx.amount)}
+                    <span className={`text-sm font-bold ${tx.entry_type === LEDGER_ENTRY_TYPES.REVENUE ? 'text-green-500' : 'text-red-500'}`}>
+                      {tx.entry_type === LEDGER_ENTRY_TYPES.REVENUE ? '+' : '-'}{fmt(tx.amount)}
                     </span>
                     <button onClick={() => deleteEntry(tx.ledger_id || tx.id)} className="p-1 hover:text-red-500" style={{ color: 'var(--color-text-muted)' }}><Trash2 size={14}/></button>
                   </div>

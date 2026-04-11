@@ -5,14 +5,15 @@ import html2canvas from 'html2canvas';
 import {
   Printer, AlertTriangle, Clock, CheckCircle2,
   Sprout, ShoppingCart, DollarSign, Lock, Package,
-  ChevronRight, Leaf, Sun, Moon, Calendar, ScanEye, ArrowRight
+  ChevronRight, Leaf, Sun, Moon, Calendar, ScanEye, ArrowRight,
+  Bell, BellOff, CheckCheck, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '../contexts/ThemeContext';
 import db from '../services/db';
 import { getBatchStage } from '../services/taskEngine';
 import { runDailyTaskGeneration } from '../services/taskAutomation';
-import { generatePreventiveAlerts } from '../services/preventiveAlerts';
+import { generatePreventiveAlerts, getActiveAlerts, acknowledgeAlert, dismissAllByType } from '../services/preventiveAlerts';
 import lifecycleScheduler from '../services/lifecycleScheduler';
 
 function Dashboard() {
@@ -28,11 +29,15 @@ function Dashboard() {
   const [awayPeriods, setAwayPeriods] = useState([]);
   const [showAwayModal, setShowAwayModal] = useState(false);
   const [lastScouted, setLastScouted] = useState(null);
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [expandedAlertTypes, setExpandedAlertTypes] = useState({});
 
   const loadData = useCallback(async () => {
     try {
       await lifecycleScheduler.evaluateMissedTasks();
       await generatePreventiveAlerts();
+      const freshAlerts = await getActiveAlerts();
+      setActiveAlerts(freshAlerts);
       const { default: weatherService } = await import('../services/weatherService');
       
       const [t, b, c, i, p, h, w, away, sessions, trays, weatherHourly] = await Promise.all([
@@ -361,6 +366,126 @@ function Dashboard() {
         )}
 
 
+
+        {/* ── ALERT INBOX (Grouped by Type) ── */}
+        {(() => {
+          // Group active alerts by alert_type
+          const grouped = activeAlerts.reduce((acc, alert) => {
+            const key = alert.alert_type;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(alert);
+            return acc;
+          }, {});
+
+          const groupEntries = Object.entries(grouped);
+          if (groupEntries.length === 0) return null;
+
+          const escalatedTotal = activeAlerts.filter(a => a.alert_status === 'Escalated').length;
+
+          const alertTypeLabels = {
+            preventive_condition_met: 'Preventive Spray Condition',
+            fertilizer_due: 'Fertilizer Due',
+            bolting_check: 'Bolting Risk Check',
+            tug_test_due: 'Tug Test Due',
+            low_stock: 'Low Harvest Stock',
+            low_input_stock: 'Low Input Supply',
+            clear_spent_crop: 'Spent Crop to Clear'
+          };
+
+          return (
+            <section className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <Bell size={14} className={escalatedTotal > 0 ? 'text-red-500 animate-pulse' : 'text-amber-500'} />
+                <h2 className={`text-sm font-bold uppercase tracking-wider ${escalatedTotal > 0 ? 'text-red-500' : 'text-amber-500'}`}>
+                  Farm Alerts ({activeAlerts.length})
+                </h2>
+                {escalatedTotal > 0 && (
+                  <span className="ml-auto text-[10px] font-black bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                    {escalatedTotal} ESCALATED
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {groupEntries.map(([alertType, alertsInGroup]) => {
+                  const isExpanded = expandedAlertTypes[alertType];
+                  const hasEscalated = alertsInGroup.some(a => a.alert_status === 'Escalated');
+                  const label = alertTypeLabels[alertType] || alertType.replace(/_/g, ' ');
+                  const highestPriority = alertsInGroup.some(a => a.priority === 'Critical' || a.alert_status === 'Escalated') ? 'critical' :
+                    alertsInGroup.some(a => a.priority === 'High') ? 'high' : 'medium';
+                  const borderColor = highestPriority === 'critical' ? 'border-l-red-600' :
+                    highestPriority === 'high' ? 'border-l-amber-500' : 'border-l-blue-500/50';
+                  const labelColor = highestPriority === 'critical' ? 'text-red-500' :
+                    highestPriority === 'high' ? 'text-amber-500' : 'text-themed-primary';
+
+                  return (
+                    <div key={alertType} className={`glass-card border-l-4 ${borderColor} overflow-hidden`}>
+                      {/* Group Header — tap to expand */}
+                      <div
+                        className="p-3 flex items-center gap-3 cursor-pointer select-none"
+                        onClick={() => setExpandedAlertTypes(prev => ({ ...prev, [alertType]: !prev[alertType] }))}
+                      >
+                        {hasEscalated && <AlertTriangle size={14} className="text-red-500 flex-shrink-0 animate-pulse" />}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-bold truncate ${labelColor}`}>{label}</p>
+                          <p className="text-[10px] text-themed-muted mt-0.5">
+                            {alertsInGroup.length} occurrence{alertsInGroup.length > 1 ? 's' : ''}
+                            {hasEscalated && <span className="ml-1 text-red-400 font-bold">· Escalated</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await dismissAllByType(alertType);
+                              setActiveAlerts(prev => prev.filter(a => a.alert_type !== alertType));
+                              toast.success(`Dismissed all ${label} alerts`);
+                            }}
+                            className="text-[10px] font-bold px-2 py-1 rounded-lg bg-white/5 text-themed-muted hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                          >
+                            Dismiss All
+                          </button>
+                          {isExpanded ? <ChevronUp size={14} className="text-themed-muted" /> : <ChevronDown size={14} className="text-themed-muted" />}
+                        </div>
+                      </div>
+
+                      {/* Expanded individual alert rows */}
+                      {isExpanded && (
+                        <div className="border-t border-white/5 divide-y divide-white/5">
+                          {alertsInGroup.map(alert => (
+                            <div key={alert.alert_id} className="px-3 py-2.5 flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-themed-primary leading-snug">{alert.message}</p>
+                                <p className="text-[10px] text-themed-muted mt-0.5">
+                                  {alert.alert_status === 'Escalated' && <span className="text-red-400 font-bold mr-1">ESCALATED ·</span>}
+                                  {alert.alert_status === 'Acknowledged' && <span className="text-blue-400 font-bold mr-1">SEEN ·</span>}
+                                  {new Date(alert.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
+                                </p>
+                              </div>
+                              {alert.alert_status === 'New' && (
+                                <button
+                                  onClick={async () => {
+                                    await acknowledgeAlert(alert.alert_id);
+                                    setActiveAlerts(prev => prev.map(a =>
+                                      a.alert_id === alert.alert_id ? { ...a, alert_status: 'Acknowledged' } : a
+                                    ));
+                                  }}
+                                  className="flex-shrink-0 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                                  title="Mark as seen"
+                                >
+                                  <CheckCheck size={14} />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* UPCOMING */}
         {upcomingTasks.length > 0 && (

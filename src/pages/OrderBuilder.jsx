@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import supabase from '../lib/supabase';
 import db from '../services/db';
 import { confirmAction } from '../services/dialogService';
+import { getAvailableQuantity, getReservedQuantity, loadReservedQuantities } from '../services/orderAllocation';
 
 function OrderBuilder() {
   const location = useLocation();
@@ -16,7 +17,7 @@ function OrderBuilder() {
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [pricing, setPricing] = useState([]);
-  const [activeOrders, setActiveOrders] = useState([]); // For soft allocation
+  const [reservedQtys, setReservedQtys] = useState({});
 
   const [selectedCustomerId, setSelectedCustomerId] = useState(prefill.customerId || '');
   const [deliveryDate, setDeliveryDate] = useState('');
@@ -27,37 +28,29 @@ function OrderBuilder() {
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    const [custResp, invResp, pricingResp, ordersResp] = await Promise.all([
+    const [custResp, invResp, pricingResp, reservedQtyMap] = await Promise.all([
       db.getAll('customers'),
       db.getAll('inventory'),
       supabase.from('pricing').select('*'),
-      supabase.from('order_line_items')
-        .select('sku_id, quantity, orders!inner(status)')
-        .in('orders.status', ['Pending', 'Confirmed', 'Packed'])
+      loadReservedQuantities()
     ]);
 
     setCustomers(custResp || []);
     setInventory(invResp || []);
     setPricing(pricingResp.data || []);
-    setActiveOrders(ordersResp.data || []);
+    setReservedQtys(reservedQtyMap);
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
 
   // Soft allocation: compute reserved qty per SKU across active orders
-  const getReserved = (skuId) => {
-    return activeOrders
-      .filter(o => o.sku_id === skuId)
-      .reduce((sum, o) => sum + parseFloat(o.quantity || 0), 0);
-  };
+  const getReserved = (skuId) => getReservedQuantity(reservedQtys, skuId);
 
   const getAvailable = (sku) => {
     const skuId = sku.sku_id || sku.id;
-    const reserved = getReserved(skuId);
-    // Also subtract what's already in the current cart
     const inCart = cartItems.find(c => c.sku_id === skuId)?.qty || 0;
-    return Math.max(0, parseFloat(sku.current_stock || 0) - reserved - inCart);
+    return getAvailableQuantity(sku, reservedQtys, inCart);
   };
 
   const getPricing = (skuId) => {

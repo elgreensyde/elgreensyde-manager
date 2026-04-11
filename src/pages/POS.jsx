@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import db from '../services/db';
 import supabase from '../lib/supabase';
 import html2canvas from 'html2canvas';
+import { getAvailableQuantity, getReservedQuantity, loadReservedQuantities } from '../services/orderAllocation';
+import { isRlsPolicyError, loadPosSalesHistory, recordRevenueEntry as saveRevenueEntry } from '../services/ledgerService';
 
 function POS() {
   const [inventory, setInventory] = useState([]);
@@ -42,22 +44,14 @@ function POS() {
   const receiptRef = useRef(null);
 
   const load = async () => {
-    const [invResp, custResp, reservedResp] = await Promise.all([
+    const [invResp, custResp, reservedQtyMap] = await Promise.all([
       db.getAll('inventory') || [],
       db.getAll('customers') || [],
-      supabase
-        .from('order_line_items')
-        .select('sku_id, quantity, orders!inner(status)')
-        .in('orders.status', ['Pending', 'Confirmed', 'Packed'])
+      loadReservedQuantities()
     ]);
     setInventory(invResp || []);
     setCustomers(custResp || []);
-
-    const reserved = {};
-    for (const item of (reservedResp.data || [])) {
-      reserved[item.sku_id] = (reserved[item.sku_id] || 0) + parseFloat(item.quantity || 0);
-    }
-    setReservedQtys(reserved);
+    setReservedQtys(reservedQtyMap);
     setLoading(false);
   };
 
@@ -65,26 +59,13 @@ function POS() {
 
   const getPrice = (sku) => parseFloat(sku.retail_price) || 0;
 
-  const getAvailable = (sku) => {
-    const skuId = sku.sku_id || sku.id;
-    const reserved = reservedQtys[skuId] || 0;
-    return Math.max(0, parseFloat(sku.current_stock || 0) - reserved);
-  };
+  const getAvailable = (sku) => getAvailableQuantity(sku, reservedQtys);
 
-  const getReserved = (sku) => reservedQtys[sku.sku_id || sku.id] || 0;
-
-  const isRlsPolicyError = (err) =>
-    (err?.message || '').toLowerCase().includes('row-level security policy');
+  const getReserved = (sku) => getReservedQuantity(reservedQtys, sku.sku_id || sku.id);
 
   const recordRevenueEntry = async (amount, description) => {
     try {
-      await db.insert('financial_ledger', {
-        entry_type: 'Revenue',
-        amount,
-        description,
-        order_id: null,
-        entry_date: new Date().toISOString().split('T')[0]
-      });
+      await saveRevenueEntry({ amount, description });
       return true;
     } catch (err) {
       if (isRlsPolicyError(err)) return false;
@@ -266,15 +247,7 @@ function POS() {
   };
 
   const openHistory = async () => {
-    const logs = await db.getAll('financial_ledger');
-    if (logs) {
-      setSalesHistory(
-        logs.filter(l => l.description && (
-          l.description.includes('POS Sale') ||
-          l.description.includes('Quick Sell')
-        )).reverse()
-      );
-    }
+    setSalesHistory(await loadPosSalesHistory());
     setShowHistoryModal(true);
   };
 

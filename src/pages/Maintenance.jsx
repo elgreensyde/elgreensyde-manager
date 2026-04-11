@@ -147,15 +147,15 @@ function Maintenance() {
       }
       
       toast.success(`Successfully logged action for ${form.target_ids.length} targets!`);
+      setShowModal(false);
+      setForm(defaultForm);
+      load();
     } catch (err) {
       alert(err.message);
       console.error("Batch log error:", err);
       toast.error("Failed to log all actions.");
+      return;
     }
-
-    setShowModal(false);
-    setForm(defaultForm);
-    load();
   };
 
   const deleteLog = async (logId) => { 

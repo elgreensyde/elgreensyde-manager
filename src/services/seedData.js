@@ -4,6 +4,9 @@ import db from './db';
 import { seedCropLibrary, seedInputsInventory } from './seedCropLibrary';
 import { seedRecommendations } from './seedRecommendations';
 
+const ENABLE_CLIENT_SEEDING =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_CLIENT_SEEDING === 'true';
+
 const SEED_ZONES = [
   { name: 'Raised Bed 1', type: 'Plot' },
   { name: 'Raised Bed 2', type: 'Plot' },
@@ -22,6 +25,11 @@ const CUST_WALKIN = {
 };
 
 export async function initializeSeedData() {
+  if (!ENABLE_CLIENT_SEEDING) {
+    console.info('Client seed writes are disabled. Expect reference data to be provisioned by migrations/admin scripts.');
+    return true;
+  }
+
   try {
     // Seed crop library (22 crops now)
     try { await seedCropLibrary(); } catch(e) { console.warn('Crop library seed skipped:', e.message); }
