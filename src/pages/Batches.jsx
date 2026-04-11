@@ -267,21 +267,24 @@ function Batches() {
     try {
       // 1. Mark tray as Transplanted/Completed
       await db.update('trays', activeTrayForTransplant.tray_id || activeTrayForTransplant.id, { 
-        status: 'Completed', 
+        status: 'Transplanted', // Better semantic status than Completed
         assigned_plot_id: transplantForm.target_plot_id 
       });
 
-      // 2. Mark plot as Active and assign crop & original sowing date
+      // 1b. Cleanup orphaned tray tasks (prevents future vegetative tasks firing for empty trays)
+      await lifecycleScheduler.cleanupTasks(activeTrayForTransplant.tray_id || activeTrayForTransplant.id, 'tray');
+
+      // 2. Mark plot as Active and assign crop & original TRUE sowing date (Day 0)
       await db.update('plots', transplantForm.target_plot_id, {
         status: 'Active',
         crop_id: activeTrayForTransplant.crop_id,
-        sowing_date: transplantForm.transplant_date // Track when it actually hit the bed
+        sowing_date: activeTrayForTransplant.sowing_date // Carry over TRUE biological age
       });
 
       toast.success('Successfully transplanted to plot!');
       
-      // 3. Trigger secondary task generation for Plot
-      await lifecycleScheduler.generateTaskChain(transplantForm.target_plot_id, 'plot', transplantForm.transplant_date, activeTrayForTransplant.crop_id);
+      // 3. Trigger secondary task chain using the TRUE sowing date, so plots get the remaining mature tasks
+      await lifecycleScheduler.generateTaskChain(transplantForm.target_plot_id, 'plot', activeTrayForTransplant.sowing_date, activeTrayForTransplant.crop_id);
       
       setShowTransplantModal(false);
       setTransplantForm(defaultTransplantForm);
