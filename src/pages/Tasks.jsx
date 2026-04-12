@@ -92,7 +92,7 @@ function Tasks() {
   const upcoming = useMemo(() => tasks.filter(t => t.due_date > today && t.status === 'Pending').sort((a,b) => a.due_date.localeCompare(b.due_date)), [tasks, today]);
   const completed = useMemo(() => tasks.filter(t => t.status === 'Completed').sort((a,b) => (b.completed_at||'').localeCompare(a.completed_at||'')), [tasks]);
 
-  const displayTasks = filterStatus === 'Overdue' ? [...missed, ...overdue] : filterStatus === 'Today' ? dueToday : filterStatus === 'Upcoming' ? upcoming : filterStatus === 'Completed' ? completed : [...missed, ...overdue, ...dueToday, ...upcoming];
+  const displayTasks = filterStatus === 'Overdue' ? [...missed, ...overdue] : filterStatus === 'Today' ? dueToday : filterStatus === 'Upcoming' ? upcoming : filterStatus === 'Completed' ? completed : [...dueToday, ...missed, ...overdue, ...upcoming];
 
   const completeTask = async (taskId) => { 
     try {
@@ -227,7 +227,7 @@ function Tasks() {
           <button onClick={() => setShowForm(true)} className="btn-secondary"><Plus size={18} /><span className="hidden sm:inline">Manual Task</span></button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {[{ key: '', label: 'All', count: overdue.length+dueToday.length+upcoming.length }, { key: 'Overdue', label: '🔴 Overdue', count: overdue.length }, { key: 'Today', label: '🟡 Today', count: dueToday.length }, { key: 'Upcoming', label: '🔵 Upcoming', count: upcoming.length }, { key: 'Completed', label: '✅ Done', count: completed.length }].map(tab => (
+          {[{ key: '', label: 'All', count: overdue.length+dueToday.length+upcoming.length }, { key: 'Today', label: '🟡 Today', count: dueToday.length }, { key: 'Overdue', label: '🔴 Overdue', count: overdue.length }, { key: 'Upcoming', label: '🔵 Upcoming', count: upcoming.length }, { key: 'Completed', label: '✅ Done', count: completed.length }].map(tab => (
             <button key={tab.key} onClick={() => setFilterStatus(tab.key)} className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-colors" style={filterStatus === tab.key ? { background: 'var(--color-bg-card-hover)', color: 'var(--color-text-primary)' } : { color: 'var(--color-text-muted)' }}>
               {tab.label}{tab.count > 0 && <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'var(--color-bg-card)' }}>{tab.count}</span>}
             </button>
