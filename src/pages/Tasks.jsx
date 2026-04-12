@@ -14,7 +14,7 @@ function Tasks() {
   const [batches, setBatches] = useState([]);
   const [crops, setCrops] = useState([]);
   const [plots, setPlots] = useState([]);
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState('Today');
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [inputs, setInputs] = useState([]);
@@ -227,7 +227,7 @@ function Tasks() {
           <button onClick={() => setShowForm(true)} className="btn-secondary"><Plus size={18} /><span className="hidden sm:inline">Manual Task</span></button>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {[{ key: '', label: 'All', count: overdue.length+dueToday.length+upcoming.length }, { key: 'Today', label: '🟡 Today', count: dueToday.length }, { key: 'Overdue', label: '🔴 Overdue', count: overdue.length }, { key: 'Upcoming', label: '🔵 Upcoming', count: upcoming.length }, { key: 'Completed', label: '✅ Done', count: completed.length }].map(tab => (
+          {[{ key: 'Today', label: '🟡 Today', count: dueToday.length }, { key: 'Overdue', label: '🔴 Overdue', count: overdue.length }, { key: 'Upcoming', label: '🔵 Upcoming', count: upcoming.length }, { key: 'Completed', label: '✅ Done', count: completed.length }, { key: '', label: 'All', count: overdue.length+dueToday.length+upcoming.length }].map(tab => (
             <button key={tab.key} onClick={() => setFilterStatus(tab.key)} className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-colors" style={filterStatus === tab.key ? { background: 'var(--color-bg-card-hover)', color: 'var(--color-text-primary)' } : { color: 'var(--color-text-muted)' }}>
               {tab.label}{tab.count > 0 && <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ background: 'var(--color-bg-card)' }}>{tab.count}</span>}
             </button>
