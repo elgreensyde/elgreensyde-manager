@@ -1,6 +1,6 @@
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, Beaker, ChevronRight, Sun, Moon, ScanEye, ClipboardList, Target, Zap, CloudSun } from 'lucide-react';
+import { Home, Sprout, CheckSquare, ShoppingCart, Menu, X, BookOpen, Package, DollarSign, Beaker, ChevronRight, Sun, Moon, ScanEye, ClipboardList, Target, Zap, CloudSun, CalendarDays } from 'lucide-react';
 import { useTheme } from './contexts/ThemeContext';
 import { initializeSeedData } from './services/seedData';
 import Dashboard from './pages/Dashboard';
@@ -17,6 +17,7 @@ import OrderBuilder from './pages/OrderBuilder';
 import FulfillmentBoard from './pages/FulfillmentBoard';
 import PlantingTargets from './pages/PlantingTargets';
 import Weather from './pages/Weather';
+import BasilCalendar from './pages/BasilCalendar';
 import { Toaster } from 'react-hot-toast';
 import awayService from './services/awayService';
 import notificationService from './services/notificationService';
@@ -109,6 +110,7 @@ function App() {
 
   const moreNav = [
     { to: '/monitoring', icon: ScanEye, label: 'Farm Walk' },
+    { to: '/calendar', icon: CalendarDays, label: 'Basil Calendar' },
     { to: '/weather', icon: CloudSun, label: 'Weather' },
     { to: '/orders', icon: ClipboardList, label: 'Orders' },
     { to: '/targets', icon: Target, label: 'Planting Targets' },
@@ -195,6 +197,7 @@ function App() {
           <Route path="/weather" element={<Weather />} />
           <Route path="/orders/new" element={<OrderBuilder />} />
           <Route path="/targets" element={<PlantingTargets />} />
+          <Route path="/calendar" element={<BasilCalendar />} />
         </Routes>
       </main>
 
